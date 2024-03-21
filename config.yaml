@@ -1,0 +1,13 @@
+# Times should be expressed in military time and in string form, (Hour:Minutes or Hour:Minutes:Seconds) 
+
+# Time the internet will be cut off
+shutdowntimes:
+  - "23:00"
+  - "0:00"
+  - "0:30"
+  - "0:45"
+  - "0:57:30"
+  - "1:00"
+
+# Time with which determines when a new day is in streak terms
+streakshift: "4:00"
