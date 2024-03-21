@@ -2,12 +2,16 @@
 
 # Time the internet will be cut off
 shutdowntimes:
-  - "23:00"
-  - "0:00"
-  - "0:30"
-  - "0:45"
+  - "23:00:00"
+  - "0:00:00"
+  - "0:30:00"
+  - "0:45:00"
   - "0:57:30"
-  - "1:00"
+  - "1:00:00"
 
 # Time with which determines when a new day is in streak terms
 streakshift: "4:00"
+ethernet:
+  - "Ethernet"
+  - "Ethernet 2"
+  - "NordLynx"
