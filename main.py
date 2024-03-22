@@ -8,6 +8,7 @@ import json
 import os.path
 from colour import Color
 from datetime import datetime, timedelta
+from PIL import Image, ImageTk
 
 # from https://github.com/abagh0703/turn-off-wifi
 CMD_BASE = 'cmd /c "{}"'  # first is remain/terminate, then is enable/disable
@@ -28,6 +29,8 @@ STREAKSHIFT_KEY = "streakshift"
 STREAK_KEY = "streak"
 
 DEBUG_KEY = "debug"
+
+ASSET_FOLDER = "assets"
 
 global now
 global time_since_json_write
@@ -90,6 +93,7 @@ def update_datetime_labels():
     if now <= cutoff_time:
         json_data[STREAK_KEY] += 1
         cutoff_time.replace(day=tomorrow.day)
+        update_streak_graphics()
 
     # Setting last time open
     time_since_json_write += 1
@@ -108,7 +112,7 @@ def update_datetime_labels():
            recalculate_time(data)
            turn_off_wifi()
            turn_off_ethernet()
-           json_data[STREAK_KEY] = 0
+           sort_labels()
 
 def recalculate_time(data: shutdown_data):
    data.datetime = data.datetime.replace(day=tomorrow.day)
@@ -165,6 +169,34 @@ def sort_labels():
 
     for data in shutdown_labels:
         data.label.pack(ipadx=10, ipady=10, fill="both")
+
+def get_streak_icon(streak : int) -> ImageTk:
+    path = ""
+    if streak >= 60:
+        path = ASSET_FOLDER + "/streak3.png"
+    elif streak >= 30:
+        path = ASSET_FOLDER + "/streak2.png"
+    else:
+        path = ASSET_FOLDER + "/streak.png"
+    img = Image.open(path).convert("RGBA")
+    streak_img = ImageTk.PhotoImage(img)
+
+    return streak_img
+
+def update_streak_graphics():
+    streak = json_data[STREAK_KEY]
+    if streak <= 0:
+        streak_icon.pack_forget()
+        streak_label.pack(side='top', anchor='center', expand=False)
+    else:
+        streak_icon.pack(side='left', anchor='e', expand=True)
+        streak_label.pack(side='right', anchor='w', expand=True)
+    streak_icon.configure(image=get_streak_icon(streak))
+    streak_label.configure(text=f"Streak: {streak}")
+
+def streak_mod(mod : int):
+    json_data[STREAK_KEY] += mod
+    update_streak_graphics()
 
 # Defining basic time variables
 now = datetime.now()
@@ -246,15 +278,32 @@ status_label.pack_forget()
 
 # Debug turn internet on and off buttons
 if cfg[DEBUG_KEY]:
-    turn_off = customtkinter.CTkButton(bottom_frame, text = 'Turn off Internet',
-                            command = turn_off_ethernet) 
-    turn_on = customtkinter.CTkButton(bottom_frame, text = 'Turn on Internet',
-                            command = turn_on_ethernet)  
-    turn_off.pack(side = 'top')
-    turn_on.pack()
+    debug_frame = customtkinter.CTkFrame(app)
+    debug_frame.pack(side='bottom', fill="x")
 
+    turn_off = customtkinter.CTkButton(debug_frame, text = 'Turn off Internet',
+                            command = turn_off_ethernet) 
+    turn_on = customtkinter.CTkButton(debug_frame, text = 'Turn on Internet',
+                            command = turn_on_ethernet)  
+    turn_off.pack(side = 'left', anchor='e', expand=True)
+    turn_on.pack(side='left', anchor='w', expand=True)
+
+    streak_inc = customtkinter.CTkButton(debug_frame, text = 'Streak +',
+                            command = lambda : streak_mod(30)) 
+    streak_dec = customtkinter.CTkButton(debug_frame, text = 'Streak -',
+                            command = lambda : streak_mod(-30))  
+    streak_inc.pack(side = 'right', anchor='e', expand=True)
+    streak_dec.pack(side='right', anchor='w', expand=True)
+
+streak_icon = customtkinter.CTkLabel(bottom_frame, text="")
+streak_icon.pack(side='left', anchor='e', expand=True)
 streak_label = customtkinter.CTkLabel(bottom_frame, text=f"Streak: {json_data[STREAK_KEY]}" )
-streak_label.pack()
+streak_label.pack(side='right', anchor='w', expand=True)
+update_streak_graphics()
+
+# Apparently resizes the window
+app.update_idletasks()
+app.minsize(app.winfo_width(), app.winfo_height())
 
 # Run time update
 time_since_json_write = 0
