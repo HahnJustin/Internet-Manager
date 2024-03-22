@@ -314,10 +314,10 @@ status_label = customtkinter.CTkLabel(app, text=f"" )
 status_label.pack_forget()
 
 # Calculating what state the manager should be in:
-if type(time_action_labels[0]) is shutdown_data:
+if type(time_action_labels[-1]) is shutdown_data:
     turn_off_wifi()
     turn_off_ethernet()
-elif type(time_action_labels[0]) is internet_up_data:
+elif type(time_action_labels[-1]) is internet_up_data:
     turn_on_wifi()
     turn_on_ethernet()
 
