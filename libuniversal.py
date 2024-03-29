@@ -16,6 +16,7 @@ class ConfigKey(str, Enum):
     STREAK_SHIFT = "streak_shift"
     UP_TIMES = "up_times"
     SHUTDOWN_TIMES = "shutdown_times"
+    ENFORCED_SHUTDOWN_TIMES = "enforced_shutdown_times"
     ETHERNET = "ethernet"
     HOST = "host"
     PORT = "port"
@@ -28,4 +29,5 @@ class StorageKey(str, Enum):
 class Paths(str, Enum):
     JSON_FILE = "storage.json"
     CONFIG_FILE = "config.yaml"
+    CLIENT_CONFIG_FILE = "client-config.yaml"
     ASSETS_FOLDER = "assets"

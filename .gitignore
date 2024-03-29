@@ -1,6 +1,9 @@
 #Storage Json File
 storage.json
 
+#Other files
+font-viewer.py
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

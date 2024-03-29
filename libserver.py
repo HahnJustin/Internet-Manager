@@ -101,6 +101,15 @@ class Message:
         elif action == Actions.GRAB_CONFIG:
             cfg = configreader.get_config()
             content = {MessageKey.RESULT: cfg}
+        elif action == Actions.ADMIN_STATUS:
+            admin = internet_management.is_admin()
+            content = {MessageKey.RESULT: admin}
+        elif action == Actions.INTERNET_STATUS:
+            on = internet_management.is_internet_on()
+            content = {MessageKey.RESULT: on}
+        elif action == Actions.GRAB_STORAGE:
+            storage = configreader.get_storage()
+            content = {MessageKey.RESULT: storage}
         else:
             content = {MessageKey.RESULT: f"Error: invalid action '{action}'."}
         content_encoding = "utf-8"

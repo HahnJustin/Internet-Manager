@@ -17,6 +17,7 @@ class Message:
         self._jsonheader_len = None
         self.jsonheader = None
         self.response = None
+        self.result = None
 
     def _set_selector_events_mask(self, mode):
         """Set selector to listen for events: mode is 'r', 'w', or 'rw'."""
@@ -82,17 +83,19 @@ class Message:
 
     def _process_response_json_content(self):
         content = self.response
-        result = content.get("result")
-        print(f"Got result: {result}")
+        self.result = content.get("result")
+        print(f"Got result: {self.result}")
 
     def _process_response_binary_content(self):
-        content = self.response
-        print(f"Got response: {content!r}")
+        self.result = self.response
+        print(f"Got response: {self.result!r}")
 
     def process_events(self, mask):
         if mask & selectors.EVENT_READ:
+            print("Message Event Read")
             self.read()
         if mask & selectors.EVENT_WRITE:
+            print("Message Event Write")
             self.write()
 
     def read(self):
@@ -182,7 +185,7 @@ class Message:
                 if reqhdr not in self.jsonheader:
                     raise ValueError(f"Missing required header '{reqhdr}'.")
 
-    def process_response(self):
+    def process_response(self) -> str:
         content_len = self.jsonheader["content-length"]
         if not len(self._recv_buffer) >= content_len:
             return
