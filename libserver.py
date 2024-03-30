@@ -90,6 +90,14 @@ class Message:
             query = self.request.get("value")
             answer = internet_management.request_search.get(query) or f"No match for '{query}'."
             content = {MessageKey.RESULT: answer}
+        elif action == Actions.USED_VOUCHER:
+            time = self.request.get("value")
+            answer = configreader.use_voucher(time)
+            content = {MessageKey.RESULT: answer}
+        elif action == Actions.UNUSED_VOUCHER:
+            time = self.request.get("value")
+            answer = configreader.unuse_voucher(time)
+            content = {MessageKey.RESULT: answer}
         elif action == Actions.INTERNET_OFF:
             internet_management.turn_off_wifi()
             internet_management.turn_off_ethernet()

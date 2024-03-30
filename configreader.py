@@ -1,7 +1,8 @@
 import yaml
 import os
 import json
-from libuniversal import ConfigKey,  Paths
+from datetime import datetime, timedelta
+from libuniversal import ConfigKey, StorageKey, Paths
 
 cfg = None
 json_data = {}
@@ -24,3 +25,38 @@ def get_storage() -> dict:
         f = open(Paths.JSON_FILE) 
         json_data = json.load(f)
     return json_data
+
+def save_storage():
+    with open(Paths.JSON_FILE, 'w') as f:
+        json.dump(json_data, f)
+
+def use_voucher(time):
+    real_time = str_to_datetime(time)
+    json_data[StorageKey.VOUCHER] -= 1
+
+    if not StorageKey.VOUCHERS_USED in json_data:
+        json_data[StorageKey.VOUCHERS_USED] = []
+    json_data[StorageKey.VOUCHERS_USED].append(time)
+    save_storage()
+
+    return f"Used voucher on time {time}"
+    #add voucher_used tag to json storage that takes in a list of time stamps
+    #basically every time a time data tries to be triggered check the vouched list
+    #is that exact time is in the vouched list, ignore the trigger, remove it from the list (call unuse_voucher)
+
+# adds a voucher number to json file then removes voucher
+def unuse_voucher(time):
+    if StorageKey.VOUCHERS_USED in json_data and time in json_data[StorageKey.VOUCHERS_USED]:
+        json_data[StorageKey.VOUCHER] += 1
+        remove_voucher(time)
+        return f"Unused voucher on time {time}"
+    return "Error that time was not vouched for"
+
+# remove voucher_used tag to json storage
+def remove_voucher(time):
+    if time in json_data[StorageKey.VOUCHERS_USED]:
+        json_data[StorageKey.VOUCHERS_USED].remove(time)
+        save_storage()
+
+def str_to_datetime(time : str) -> datetime:
+    return datetime.strptime(time, '%m/%d/%y %H:%M:%S')

@@ -8,6 +8,8 @@ class Actions(str, Enum):
     GRAB_STORAGE = "grab_storage"
     INTERNET_STATUS = "internet_status"
     ADMIN_STATUS = "admin_status"
+    USED_VOUCHER = "used_voucher"
+    UNUSED_VOUCHER = "unused_voucher"
 
 class MessageKey(str, Enum):
     RESULT = "result"
@@ -25,6 +27,8 @@ class ConfigKey(str, Enum):
 class StorageKey(str, Enum):
     SINCE_LAST_RELAPSE = "last_relapse"
     VOUCHER = "voucher"
+    VOUCHERS_USED = "vouchers_used"
+    VOUCHER_LIMIT = "voucher_limit"
 
 class Paths(str, Enum):
     JSON_FILE = "storage.json"
