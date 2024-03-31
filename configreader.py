@@ -63,8 +63,13 @@ def remove_voucher(time):
         json_data[StorageKey.VOUCHERS_USED].remove(time)
         save_storage()
 
+def set_manual_override(used : bool):
+    if json_data and StorageKey.MANUAL_USED in json_data:
+        json_data[StorageKey.MANUAL_USED] = used
+        save_storage()
+
 def add_voucher():
-    if json_data and StorageKey.VOUCHERS_USED in json_data:
+    if json_data and StorageKey.VOUCHER in json_data:
         json_data[StorageKey.VOUCHER] += 1
         save_storage()
 

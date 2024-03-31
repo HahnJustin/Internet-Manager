@@ -32,6 +32,7 @@ class StorageKey(str, Enum):
     VOUCHER = "voucher"
     VOUCHERS_USED = "vouchers_used"
     VOUCHER_LIMIT = "voucher_limit"
+    MANUAL_USED = "manual_used"
 
 class Paths(str, Enum):
     JSON_FILE = "storage.json"

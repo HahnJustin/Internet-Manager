@@ -36,10 +36,13 @@ LOOT_BOX_ODDS = 80
 VOUCHER_ODDS = 60
 
 internet_on = True
+globe_on = True
+
 admin_on = True
 stop_gifs = False
 
 used_voucher_today = False
+used_manual_override = False
 local_vouchers = 0
 status_timer = None
 
@@ -162,7 +165,8 @@ def create_request(action, value):
     elif( action == Actions.INTERNET_ON or action == Actions.INTERNET_OFF or 
           action == Actions.GRAB_CONFIG or action == Actions.ADMIN_STATUS or
           action == Actions.INTERNET_STATUS or action == Actions.GRAB_STORAGE or
-          action == Actions.RELAPSE or action == Actions.ADD_VOUCHER):
+          action == Actions.RELAPSE or action == Actions.ADD_VOUCHER or
+          action == Actions.MANUAL_OVERRIDE):
         return dict(
             type="text/json",
             encoding="utf-8",
@@ -217,6 +221,7 @@ def do_request(action, value) -> str:
 def clamp(n, smallest, largest): return max(smallest, min(n, largest))
 
 def update_gui():
+    global used_manual_override
     global used_voucher_today
     global time_action_buttons
     global json_data
@@ -243,8 +248,12 @@ def update_gui():
     now = datetime.now()
 
     if now > cutoff_time:
+        recalculate_streak()
         recalculate_cutoff_time()
         used_voucher_today = False
+        used_manual_override = False
+        toggle_manual_icon(used_manual_override)
+        toggle_vouched_icon(used_voucher_today)
 
     # shutdown label maintenance
     for data in time_action_buttons:
@@ -257,13 +266,14 @@ def update_gui():
         if data.vouched:
             show_status("Voucher Consumed", True)
             used_voucher_today = True
+            toggle_vouched_icon(used_voucher_today)
         elif type(data) == shutdown_data or type(data) == enforced_shutdown_data:
             set_icon(False)
             show_status("Internet Shutdown Triggered", False)
             toggle_relapse_button(True)
             toggle_globe_animation(False)
             internet_on = False
-            if random.randint(0,99) < LOOT_BOX_ODDS and not used_voucher_today:
+            if random.randint(0,99) < LOOT_BOX_ODDS and not used_voucher_today and not used_manual_override:
                 toggle_loot_box(True)
         elif type(data) == internet_up_data:
             set_icon(True)
@@ -282,7 +292,7 @@ def update_button_color():
 def recalculate_time(data: time_action_data):
    global tomorrow
    tomorrow = now + timedelta(days=1)
-   data.datetime = data.datetime.replace(day=tomorrow.day)
+   data.datetime = data.datetime.replace(year=tomorrow.year, month=tomorrow.month, day=tomorrow.day)
    data.make_unvouched()
 
 def recalculate_cutoff_time():
@@ -294,6 +304,14 @@ def recalculate_cutoff_time():
 
     if now > cutoff_time:
         cutoff_time = cutoff_time.replace(year=tomorrow.year, month=tomorrow.month, day=tomorrow.day)
+
+def recalculate_streak():
+    global streak
+    global now
+    global last_relapse
+
+    streak = clamp(math.floor((now - last_relapse).total_seconds() / 86400),0,999999)
+    update_streak_graphics()
 
 def get_datetime():
     now = datetime.now()
@@ -482,6 +500,18 @@ def manual_override():
 
     top.grab_set()
 
+def toggle_manual_icon(value : bool):
+    if value :
+        manual_icon.pack(side='right', anchor='se')
+    else:
+        manual_icon.pack_forget()
+
+def toggle_vouched_icon(value : bool):
+    if value :
+        vouched_icon.pack(side='right', anchor='se')
+    else:
+        vouched_icon.pack_forget()
+
 def relapse(top : customtkinter.CTkToplevel):
     global streak
     global last_relapse
@@ -493,12 +523,14 @@ def relapse(top : customtkinter.CTkToplevel):
     show_status("User succumbed to temptation", True)
     do_request(Actions.RELAPSE, "")
 
+    used_manual_override = True
     json_data[StorageKey.SINCE_LAST_RELAPSE] = datetime.strftime(datetime.now(), '%m/%d/%y %H:%M:%S')
     last_relapse = get_last_relapse()
     update_streak_graphics()
     toggle_relapse_button(False)
     toggle_globe_animation(True)
     set_icon(True)
+    toggle_manual_icon(used_manual_override)
     internet_on = True
 
 def get_last_relapse() -> datetime:
@@ -511,7 +543,7 @@ def get_last_relapse() -> datetime:
 
 def toggle_relapse_button(on : bool):
     if on:
-        relapse_button.pack(side='bottom', anchor='s', expand=False)
+        relapse_button.pack(side='bottom', anchor='s', expand=True, fill='x')
     else:
         relapse_button.pack_forget()
 
@@ -552,6 +584,11 @@ def get_loot():
 def toggle_globe_animation(enabled : bool):
     global globe_frames
     global stop_gifs
+    global internet_on
+    global globe_on
+
+    if enabled == globe_on:
+        return
 
     stop_gifs = not enabled
     if enabled:
@@ -566,6 +603,7 @@ def toggle_globe_animation(enabled : bool):
         globe_disable_right_frames = get_frames(Paths.ASSETS_FOLDER + "/globular_off_right.gif")
         app.after(1, _play_gif_once, left_globe_gif, globe_disable_left_frames)
         app.after(1, _play_gif_once, right_globe_gif, globe_disable_right_frames)
+    globe_on = enabled
 
 
 # no clue why this works, but it allows the taskbar icon to be custom
@@ -608,6 +646,9 @@ if StorageKey.VOUCHERS_USED in json_data:
             used_voucher_today = True
             print('Used voucher since last cutoff detected')
             break
+
+# Find if manual override
+used_manual_override = json_data[StorageKey.MANUAL_USED]
 
 # System Settings
 customtkinter.set_appearance_mode("System")
@@ -709,7 +750,11 @@ if admin_on:
     right_globe_gif = customtkinter.CTkLabel(top_right_frame, text="", image=globe_frames[1])
     right_globe_gif.pack(side='left', anchor='w', expand=True)
 
-    toggle_globe_animation(internet_on)
+    if internet_on:
+        app.after(100, _play_gif, left_globe_gif, globe_frames)
+        app.after(100, _play_gif, right_globe_gif, globe_frames)
+    else:
+        toggle_globe_animation(False)
 
 else:
     # left caution
@@ -719,6 +764,12 @@ else:
     # right caution
     caution_left = customtkinter.CTkLabel(top_right_frame, text="", image=get_image(Paths.ASSETS_FOLDER + "/caution.png"))
     caution_left.pack(side='left', anchor='w', expand=True)
+
+manual_icon = customtkinter.CTkLabel(app, text="", image=get_image(Paths.ASSETS_FOLDER + "/embarrased_globe.png"))
+toggle_manual_icon(used_manual_override)
+
+vouched_icon = customtkinter.CTkLabel(app, text="", image=get_image(Paths.ASSETS_FOLDER + "/voucher_globe.png"))
+toggle_vouched_icon(used_voucher_today)
 
 # Debug turn internet on and off buttons
 if cfg[ConfigKey.DEBUG]:
@@ -764,7 +815,7 @@ internet_box_button = CTkButton(app, text = 'You found an internet box!',
                         text_color_disabled="white")
 toggle_loot_box(False)
 
-streak = math.floor((now - last_relapse).total_seconds() / 86400)
+streak = clamp(math.floor((now - last_relapse).total_seconds() / 86400),0,999999)
 
 streak_icon = customtkinter.CTkLabel(bottom_frame, text="")
 streak_icon.pack(side='left', anchor='e', expand=True)

@@ -73,7 +73,7 @@ def time_data_create(time : str, action : Actions):
     target = target.replace(year=now.year, month=now.month, day=now.day)
 
     if now > target:
-      target = target.replace(year=tomorrow.year, month=tomorrow.month, day=tomorrow.day)
+        target = target.replace(year=tomorrow.year, month=tomorrow.month, day=tomorrow.day)
 
     time_datas.append(time_action_data(target, action))
 
@@ -87,6 +87,7 @@ def update():
     if now > cutoff_time:
         recalculate_cutoff_time()
         cull_vouchers()
+        configreader.set_manual_override(False)
 
     json_data = configreader.get_storage()
     # label time check
@@ -96,7 +97,6 @@ def update():
             continue
         # vouched used condition
         if str(data) in json_data[StorageKey.VOUCHERS_USED]:
-            configreader.remove_voucher(str(data))
             print(f"{data} - [VOUCHED] {data.action}")
         elif data.action == Actions.INTERNET_OFF:
             internet_management.turn_off_wifi()
@@ -111,7 +111,7 @@ def update():
 def recalculate_time(data: time_action_data):
    global tomorrow
    tomorrow = now + timedelta(days=1)
-   data.datetime = data.datetime.replace(day=tomorrow.day)
+   data.datetime = data.datetime.replace(year=tomorrow.year, month=tomorrow.month, day=tomorrow.day)
 
 def get_datetime():
     now = datetime.now()
@@ -174,8 +174,9 @@ if os.path.isfile(Paths.JSON_FILE):
    f = open(Paths.JSON_FILE) 
    json_data = json.load(f)
 else:
-   json_data = {StorageKey.VOUCHER:0, StorageKey.SINCE_LAST_RELAPSE: string_now(),
-                StorageKey.VOUCHER_LIMIT : 5, StorageKey.VOUCHERS_USED : []}
+   json_data = {StorageKey.VOUCHER:3, StorageKey.SINCE_LAST_RELAPSE: string_now(),
+                StorageKey.VOUCHER_LIMIT : 5, StorageKey.VOUCHERS_USED : [],
+                StorageKey.MANUAL_USED : False}
 
 # save json
 configreader.force_storage(json_data)

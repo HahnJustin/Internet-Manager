@@ -122,6 +122,7 @@ class Message:
             internet_management.turn_on_wifi()
             internet_management.turn_on_ethernet()
             configreader.reset_relapse_time()
+            configreader.set_manual_override(True)
             content = {MessageKey.RESULT: "attempted to turn on internet, relapse acknowledged"}
         elif action == Actions.ADD_VOUCHER:
             configreader.add_voucher
