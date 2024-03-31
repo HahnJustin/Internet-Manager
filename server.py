@@ -249,9 +249,4 @@ except KeyboardInterrupt:
 finally:
     sel.close()
 
-"""
-gui_queue = Queue()
-
-"""
-
 sys.exit()

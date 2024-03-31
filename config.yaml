@@ -6,7 +6,6 @@ port: 65432
 
 # Time the internet will be cut off
 shutdown_times:
-  - "12:54:00"
   - "23:00:00"
   - "0:00:00"
   - "0:30:00"

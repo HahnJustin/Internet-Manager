@@ -9,7 +9,7 @@ import selectors
 import traceback
 import libclient
 import os.path
-import time
+import time, traceback
 import math
 import ctypes
 import random
@@ -55,8 +55,8 @@ global time_label
 global sel
 
 class time_action_data():
-    def __init__(self, time, button):
-        self.datetime = time
+    def __init__(self, _time, button):
+        self.datetime = _time
         self.button = button
         self.vouched = False
         self.button.configure(image=get_button_icon(self),
@@ -131,29 +131,39 @@ class time_action_data():
         return datetime.strftime(self.datetime, '%m/%d/%y %H:%M:%S')
     
 class shutdown_data(time_action_data):
-    def __init__(self, time, button):
+    def __init__(self, _time, button):
         self.color_list = shutdown_colors
-        super(shutdown_data, self).__init__(time, button)
+        super(shutdown_data, self).__init__(_time, button)
 
 class enforced_shutdown_data(time_action_data):
-    def __init__(self, time, button):
+    def __init__(self, _time, button):
         self.color_list = enforced_colors
-        super(enforced_shutdown_data, self).__init__(time, button)
+        super(enforced_shutdown_data, self).__init__(_time, button)
 
 class internet_up_data(time_action_data):
-    def __init__(self, time, button):
+    def __init__(self, _time, button):
         self.color_list = up_colors
-        super(internet_up_data, self).__init__(time, button)
+        super(internet_up_data, self).__init__(_time, button)
+
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
 
 def every(delay, task):
-  next_time = time.time() + delay
-  while True:
-    time.sleep(max(0, next_time - time.time()))
-    try:
-      task()
-    except Exception:
-      traceback.print_exc()
-    next_time += (time.time() - next_time) // delay * delay + delay
+    next_time = time.time() + delay
+    while True:
+        time.sleep(max(0, next_time - time.time()))
+        try:
+            task()
+        except Exception:
+            traceback.print_exc()
+        next_time += (time.time() - next_time) // delay * delay + delay
 
 def create_request(action, value):
     if action == Actions.SEARCH or Actions.USED_VOUCHER or Actions.UNUSED_VOUCHER:
@@ -178,7 +188,6 @@ def create_request(action, value):
             encoding="binary",
             content=bytes(action + value, encoding="utf-8"),
         )
-
 
 def start_connection(host, port, request):
     addr = (host, port)
@@ -231,9 +240,9 @@ def update_gui():
     global time_label
     global internet_on
 
-    (date, time) = get_datetime()
-    date_label.configure(text=date)
-    time_label.configure(text=time)
+    (_date, _time) = get_datetime()
+    date_label.configure(text=_date)
+    time_label.configure(text=_time)
 
     # Soonest time delta 
     for data in time_action_buttons:
@@ -384,6 +393,7 @@ def get_button_icon(label_data : time_action_data) -> customtkinter.CTkImage:
     return get_image(path)
 
 def get_image(path) -> customtkinter.CTkImage:
+    path = resource_path(path)
     img = Image.open(path).convert("RGBA")
     return customtkinter.CTkImage(img, size=(img.width, img.height))
 
@@ -429,15 +439,16 @@ def time_action_button_create(time : str, label_type : ConfigKey) -> time_action
 
 def set_icon(internet_on : bool):
     if internet_on:
-        app.iconbitmap(Paths.ASSETS_FOLDER + "/globe.ico")
-        img = tkinter.PhotoImage(file=Paths.ASSETS_FOLDER + "/globex5.png")
+        app.iconbitmap(resource_path(Paths.ASSETS_FOLDER + "/globe.ico"))
+        img = tkinter.PhotoImage(file=resource_path(Paths.ASSETS_FOLDER + "/globex5.png"))
     else:
-        app.iconbitmap(Paths.ASSETS_FOLDER + "/globe_no.ico")
-        img = tkinter.PhotoImage(file=Paths.ASSETS_FOLDER + "/no_globex5.png")
+        app.iconbitmap(resource_path(Paths.ASSETS_FOLDER + "/globe_no.ico"))
+        img = tkinter.PhotoImage(resource_path(file=Paths.ASSETS_FOLDER + "/no_globex5.png"))
     #custom_img = customtkinter.Ctkim
     app.wm_iconphoto(True, img)
 
 def get_frames(img):
+    img = resource_path(img)
     with Image.open(img) as gif:
         index = 0
         frames = []
@@ -640,8 +651,8 @@ if ConfigKey.MILITARY_TIME in cfg and not cfg[ConfigKey.MILITARY_TIME]:
     time_format = NORMAL_TIME
 
 if StorageKey.VOUCHERS_USED in json_data:
-    for time in json_data[StorageKey.VOUCHERS_USED]:
-        used_time = datetime.strptime(time, '%m/%d/%y %H:%M:%S')
+    for _time in json_data[StorageKey.VOUCHERS_USED]:
+        used_time = datetime.strptime(_time, '%m/%d/%y %H:%M:%S')
         if now > used_time:
             used_voucher_today = True
             print('Used voucher since last cutoff detected')
@@ -790,11 +801,11 @@ if cfg[ConfigKey.DEBUG]:
     test_gif_on = CTkButton(debug_frame, text = 'Gif Toggle On',
                             command = lambda : toggle_globe_animation(True))  
     test_gif_on.pack(side='right', anchor='w', expand=False)
-    """
+    
     test_loot_box = CTkButton(debug_frame, text = 'Test Lootbox',
                             command = lambda : toggle_loot_box(True))  
     test_loot_box.pack(side='right', anchor='w', expand=False)
-    """
+    
 
 # manual on button
 relapse_button = CTkButton(app, text = 'Override Turn On Internet',
