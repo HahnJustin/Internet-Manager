@@ -12,6 +12,7 @@ import os.path
 import time
 import math
 import ctypes
+import random
 from libuniversal import Actions, ConfigKey, StorageKey, Paths
 from customtkinter import CTkButton
 from queue import Queue
@@ -24,21 +25,24 @@ SHUTDOWN_COLORS = [(224, 0, 0), (69, 75, 92),(0, 0, 255),(0, 0, 0)]
 ENFORCED_COLORS = [(48, 0, 9), (69, 75, 92),(0, 0, 255),(0, 0, 0)]
 UP_COLORS = [(0, 144, 227), (69, 75, 92),(0, 0, 255),(0, 0, 0)]
 
+MILITARY_TIME = "%H:%M:%S"
+NORMAL_TIME = "%#I:%M:%S %p"
+
+time_format = MILITARY_TIME
+
 VOUCHED_COLOR = '#1f61a3'
 
-# Time is in milliseconds
-GUI_THREAD_TIME = 1000
-
-# Time is in seconds
-SAVE_THREAD_TIME = 3
+LOOT_BOX_ODDS = 80
+VOUCHER_ODDS = 60
 
 internet_on = True
 admin_on = True
 
+used_voucher_today = False
 local_vouchers = 0
+status_timer = None
 
 global now
-global time_since_json_write
 global colors
 global time_action_buttons
 global json_data
@@ -60,21 +64,34 @@ class time_action_data():
 
     def click(self):
         global local_vouchers
+        global internet_on
+        global time_action_buttons
 
-        if not self.vouched and local_vouchers > 0:
+        index = time_action_buttons.index(self)
+        can_vouch = True
+        for i in reversed(range(index)):
+            button = time_action_buttons[i] 
+            if not button.vouched and type(button) != internet_up_data:
+                can_vouch = False
+                break
+
+        if not self.vouched and local_vouchers > 0 and internet_on and can_vouch:
             self.make_vouched()
             local_vouchers -= 1
             do_request(Actions.USED_VOUCHER, str(self))
         elif self.vouched:
-            self.make_unvouched()
-            local_vouchers += 1
-            do_request(Actions.UNUSED_VOUCHER, str(self))
+            for i in range(index,len(time_action_buttons)):
+                button = time_action_buttons[i] 
+                if button.vouched:
+                    button.make_unvouched()
+                    local_vouchers += 1
+                    do_request(Actions.UNUSED_VOUCHER, str(button))
         update_voucher_label()
 
     def make_vouched(self):
-        date_time = self.datetime.strftime("%H:%M:%S")
+        date_time = self.datetime.strftime(time_format)
         vouched_color = Color(VOUCHED_COLOR)
-        hvr_color = Color(rgb=(vouched_color.red/1.4, vouched_color.green/1.4, vouched_color.blue/1.2))
+        hvr_color = Color(rgb=(clamp(vouched_color.red/1.4,0,1), clamp(vouched_color.green/1.4,0,1), clamp(vouched_color.blue/1.2,0,1)))
         self.button.configure(text=f"{date_time} | -:--", fg_color=VOUCHED_COLOR, hover_color=str(hvr_color), image=get_image(Paths.ASSETS_FOLDER + "/mini_voucher.png"))
         self.vouched = True
 
@@ -89,7 +106,7 @@ class time_action_data():
 
         delta = self.datetime - now
         time_left = ':'.join(str(delta).split(':')[:2])
-        date_time = self.datetime.strftime("%H:%M:%S")
+        date_time = self.datetime.strftime(time_format)
         self.button.configure(text=f"{date_time} | {time_left}")
 
     def update_color(self):
@@ -144,7 +161,7 @@ def create_request(action, value):
     elif( action == Actions.INTERNET_ON or action == Actions.INTERNET_OFF or 
           action == Actions.GRAB_CONFIG or action == Actions.ADMIN_STATUS or
           action == Actions.INTERNET_STATUS or action == Actions.GRAB_STORAGE or
-          action == Actions.RELAPSE):
+          action == Actions.RELAPSE or action == Actions.ADD_VOUCHER):
         return dict(
             type="text/json",
             encoding="utf-8",
@@ -199,10 +216,11 @@ def do_request(action, value) -> str:
 def clamp(n, smallest, largest): return max(smallest, min(n, largest))
 
 def update_gui():
-    global time_since_json_write
+    global used_voucher_today
     global time_action_buttons
     global json_data
     global now
+    global cutoff_time
     global date_label
     global time_label
     global internet_on
@@ -211,10 +229,21 @@ def update_gui():
     date_label.configure(text=date)
     time_label.configure(text=time)
 
-    soonest_time_delta = time_action_buttons[0].datetime  - now
-    time_until_label.configure(text=':'.join(str(soonest_time_delta).split(':')[:2]), text_color=str(time_action_buttons[0].get_color()))
+    # Soonest time delta 
+    for data in time_action_buttons:
+        if not data.vouched:
+            soonest_data = data
+            break
+    soonest_time_delta = soonest_data.datetime  - now
+    color = soonest_data.get_color()
+    hvr_color = Color(rgb=(clamp(color.red*1.4,0,1), clamp(color.green*1.4,0,1), clamp(color.blue*1.4,0,1)))
+    time_until_label.configure(text=':'.join(str(soonest_time_delta).split(':')[:2]), text_color=str(hvr_color))
 
     now = datetime.now()
+
+    if now > cutoff_time:
+        recalculate_cutoff_time()
+        used_voucher_today = False
 
     # shutdown label maintenance
     for data in time_action_buttons:
@@ -224,16 +253,21 @@ def update_gui():
         # actual shutdown
         if data.datetime > now:
             continue
-        if type(data) == shutdown_data or type(data) == enforced_shutdown_data:
+        if data.vouched:
+            show_status("Voucher Consumed", True)
+            used_voucher_today = True
+        elif type(data) == shutdown_data or type(data) == enforced_shutdown_data:
             set_icon(False)
             show_status("Internet Shutdown Triggered", False)
             toggle_relapse_button(True)
-            internet_on = True
-        if type(data) == internet_up_data:
+            internet_on = False
+            if random.randint(0,99) < LOOT_BOX_ODDS and not used_voucher_today:
+                toggle_loot_box(True)
+        elif type(data) == internet_up_data:
             set_icon(True)
             show_status("Internet Reboot Triggered", True)
             toggle_relapse_button(False)
-            internet_on = False
+            internet_on = True
         recalculate_time(data)
         sort_labels()
 
@@ -248,21 +282,36 @@ def recalculate_time(data: time_action_data):
    data.datetime = data.datetime.replace(day=tomorrow.day)
    data.make_unvouched()
 
+def recalculate_cutoff_time():
+    global cutoff_time
+    global now
+
+    cutoff_time = datetime.strptime(cfg[ConfigKey.STREAK_SHIFT], '%H:%M')
+    cutoff_time = cutoff_time.replace(year=now.year, month=now.month, day=now.day)
+
+    if now > cutoff_time:
+        cutoff_time = cutoff_time.replace(year=tomorrow.year, month=tomorrow.month, day=tomorrow.day)
+
 def get_datetime():
     now = datetime.now()
-    date = now.strftime("%#m-%#d-%Y")
-    time = now.strftime("%H:%M:%S")
+    date = now.strftime("%#m.%#d.%Y")
+    time = now.strftime(time_format)
     return date, time
 
 def show_status(status : str, positive : bool):
+    global status_timer
+
     if not positive:
         status_label.configure(text=status, image=get_image(Paths.ASSETS_FOLDER + "/red_ribbon.png"))
     else:
         status_label.configure(text=status, image=get_image(Paths.ASSETS_FOLDER + "/blue_ribbon.png"))
     status_label.pack()
-    run_function_in_minute(lambda: status_label.pack_forget())
 
-def run_function_in_minute(func):
+    if status_timer is not None:
+        status_timer.cancel()
+    status_timer = run_function_in_minute(lambda: status_label.pack_forget())
+
+def run_function_in_minute(func) -> threading.Timer:
     thread = threading.Timer(60.0, func) # 60 seconds = 1 minute
     thread.daemon = True
     thread.start()
@@ -421,6 +470,7 @@ def relapse(top : customtkinter.CTkToplevel):
     global streak
     global last_relapse
     global json_data
+    global internet_on
 
     top.destroy()
     streak = 0
@@ -436,9 +486,9 @@ def relapse(top : customtkinter.CTkToplevel):
 def get_last_relapse() -> datetime:
     global json_data
     global cfg
+    global cutoff_time
 
     last_relapse = datetime.strptime(json_data[StorageKey.SINCE_LAST_RELAPSE], '%m/%d/%y %H:%M:%S')
-    cutoff_time = datetime.strptime(cfg[ConfigKey.STREAK_SHIFT], '%H:%M')
     return last_relapse.replace(hour=cutoff_time.hour, minute=cutoff_time.minute)
 
 def toggle_relapse_button(on : bool):
@@ -446,6 +496,41 @@ def toggle_relapse_button(on : bool):
         relapse_button.pack(side='bottom', anchor='s', expand=False)
     else:
         relapse_button.pack_forget()
+
+def toggle_loot_box(on : bool):
+    if on:
+        internet_box_button.configure(text = 'You found an internet box!',
+                        image=get_image(Paths.ASSETS_FOLDER + "/internet_box.png")) 
+        internet_box_button.pack(fill="both", expand=True, padx=20, pady=20)
+        internet_box_button.bind("<Enter>", lambda e: internet_box_button.configure(text="Click to open!"))
+        internet_box_button.bind("<Leave>", lambda e: internet_box_button.configure(text='You found an internet box!'))
+    else:
+        internet_box_button.pack_forget()
+
+def loot_box():
+    internet_box_button.unbind("<Enter>")
+    internet_box_button.unbind("<Leave>")
+    internet_box_button.configure(text='You opened the box...', state="disabled", image=get_image(Paths.ASSETS_FOLDER + "\internet_box_open.png"))
+
+    thread = threading.Timer(random.randint(2, 10), get_loot)
+    thread.daemon = True
+    thread.start()
+
+def get_loot():
+    global local_vouchers
+    result = random.randint(0,99)
+    if result > VOUCHER_ODDS:
+        internet_box_button.configure(text='There was nothing inside :(')
+    elif local_vouchers < voucher_limit:
+        internet_box_button.configure(text='You found a voucher!!!', image=get_image(Paths.ASSETS_FOLDER + "\\voucher.png"))
+        local_vouchers += 1
+        update_voucher_label()
+        do_request(Actions.ADD_VOUCHER, "")
+    else:
+        internet_box_button.configure(text="You found a voucher, but don't have room... ", image=get_image(Paths.ASSETS_FOLDER + "\\voucher.png"))
+    
+    run_function_in_minute(lambda : toggle_loot_box(False))
+    
 
 # no clue why this works, but it allows the taskbar icon to be custom
 myappid = 'mycompany.myproduct.subproduct.version' # arbitrary string
@@ -463,9 +548,6 @@ cfg = do_request(Actions.GRAB_CONFIG, "")
 
 json_data = do_request(Actions.GRAB_STORAGE, "")
 
-# Defining last time since internet override, used in streak calc
-last_relapse = get_last_relapse()
-
 # Defining local vouchers amount
 local_vouchers = json_data[StorageKey.VOUCHER]
 voucher_limit = json_data[StorageKey.VOUCHER_LIMIT]
@@ -473,6 +555,23 @@ voucher_limit = json_data[StorageKey.VOUCHER_LIMIT]
 # Defining basic time variables
 now = datetime.now()
 tomorrow = now + timedelta(days=1)
+recalculate_cutoff_time()
+
+# Defining last time since internet override, used in streak calc
+last_relapse = get_last_relapse()
+
+# Set military time or not
+if ConfigKey.MILITARY_TIME in cfg and not cfg[ConfigKey.MILITARY_TIME]:
+    print("not military time")
+    time_format = NORMAL_TIME
+
+if StorageKey.VOUCHERS_USED in json_data:
+    for time in json_data[StorageKey.VOUCHERS_USED]:
+        used_time = datetime.strptime(time, '%m/%d/%y %H:%M:%S')
+        if now > used_time:
+            used_voucher_today = True
+            print('Used voucher since last cutoff detected')
+            break
 
 # System Settings
 customtkinter.set_appearance_mode("System")
@@ -597,18 +696,9 @@ if cfg[ConfigKey.DEBUG]:
     turn_off.pack(side = 'left', anchor='e', expand=False)
     turn_on.pack(side='left', anchor='w', expand=False)
 
-"""
-    streak_inc = CTkButton(debug_frame, text = 'Streak +',
-                            command = lambda : streak_mod(30)) 
-    streak_dec = CTkButton(debug_frame, text = 'Streak -',
-                            command = lambda : streak_mod(-30))  
-    streak_inc.pack(side = 'right', anchor='e', expand=False)
-    streak_dec.pack(side= 'right', anchor='w', expand=False)
-    
-    total_shutdown = CTkButton(debug_frame, text = 'Total Shutdown',
-                            command = shutdown_threads) 
-    total_shutdown.pack(side = 'top', expand=True)
-"""
+    test_loot_box = CTkButton(debug_frame, text = 'Test Lootbox',
+                            command = lambda : toggle_loot_box(True))  
+    test_loot_box.pack(side='right', anchor='w', expand=False)
 
 # manual on button
 relapse_button = CTkButton(app, text = 'Override Turn On Internet',
@@ -616,6 +706,18 @@ relapse_button = CTkButton(app, text = 'Override Turn On Internet',
                         hover_color='#691114',
                         fg_color="#b51b20")
 toggle_relapse_button(not internet_on)
+
+internet_box_button = CTkButton(app, text = 'You found an internet box!',
+                        hover_color='#1b1d21',
+                        fg_color= app_bg_color,
+                        image=get_image(Paths.ASSETS_FOLDER + "/internet_box.png"),
+                        compound="top",
+                        anchor='center', 
+                        corner_radius=0, 
+                        hover= True,
+                        command= loot_box,
+                        text_color_disabled="white")
+toggle_loot_box(False)
 
 streak = math.floor((now - last_relapse).total_seconds() / 86400)
 

@@ -81,6 +81,10 @@ def update():
 
     now = datetime.now()
 
+    if now > cutoff_time:
+        recalculate_cutoff_time()
+        cull_vouchers()
+
     json_data = configreader.get_storage()
     # label time check
     for data in time_datas:
@@ -134,6 +138,29 @@ def accept_wrapper(sock):
     message = libserver.Message(sel, conn, addr)
     sel.register(conn, selectors.EVENT_READ, data=message)
 
+def recalculate_cutoff_time():
+    global cutoff_time
+    global now
+
+    cutoff_time = datetime.strptime(cfg[ConfigKey.STREAK_SHIFT], '%H:%M')
+    cutoff_time = cutoff_time.replace(year=now.year, month=now.month, day=now.day)
+
+    if now > cutoff_time:
+        cutoff_time = cutoff_time.replace(year=tomorrow.year, month=tomorrow.month, day=tomorrow.day)
+
+def cull_vouchers():
+    global cutoff_time
+    
+    last_cutoff = cutoff_time - timedelta(days=1)
+    for i in reversed(range(len(json_data[StorageKey.VOUCHERS_USED]))):
+        vouched_time = json_data[StorageKey.VOUCHERS_USED][i]
+        vouched_datetime = configreader.str_to_datetime(vouched_time)
+        print(f"hello {i} {vouched_datetime}")
+        if last_cutoff > vouched_datetime:
+            json_data[StorageKey.VOUCHERS_USED].pop(i)
+    configreader.force_storage(json_data)
+    
+
 # Defining basic time variables
 now = datetime.now()
 tomorrow = now + timedelta(days=1)
@@ -147,24 +174,15 @@ else:
    json_data = {StorageKey.VOUCHER:0, StorageKey.SINCE_LAST_RELAPSE: string_now(),
                 StorageKey.VOUCHER_LIMIT : 5, StorageKey.VOUCHERS_USED : []}
 
-# Removing any old used vouchers
-for i in reversed(range(len(json_data[StorageKey.VOUCHERS_USED]))):
-    vouched_time = json_data[StorageKey.VOUCHERS_USED][i]
-    vouched_datetime = configreader.str_to_datetime(vouched_time)
-    print(f"hello {i} {vouched_datetime}")
-    if now > vouched_datetime:
-        json_data[StorageKey.VOUCHERS_USED].pop(i)
-
 # save json
-with open(Paths.JSON_FILE, 'w') as f:
-    json.dump(json_data, f)
+configreader.force_storage(json_data)
 
 # Reading config
 cfg = configreader.get_config()
 
 # Modifying streak time
-cutoff_time = datetime.strptime(cfg[ConfigKey.STREAK_SHIFT], '%H:%M')
-cutoff_time = now.replace(hour=cutoff_time.hour, minute=cutoff_time.minute)
+recalculate_cutoff_time()
+cull_vouchers()
 
 time_datas = []
 

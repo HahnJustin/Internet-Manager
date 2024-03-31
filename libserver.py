@@ -123,6 +123,9 @@ class Message:
             internet_management.turn_on_ethernet()
             configreader.reset_relapse_time()
             content = {MessageKey.RESULT: "attempted to turn on internet, relapse acknowledged"}
+        elif action == Actions.ADD_VOUCHER:
+            configreader.add_voucher
+            content = {MessageKey.RESULT: "added voucher"}
         else:
             content = {MessageKey.RESULT: f"Error: invalid action '{action}'."}
         content_encoding = "utf-8"

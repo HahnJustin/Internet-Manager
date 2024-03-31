@@ -11,6 +11,7 @@ class Actions(str, Enum):
     USED_VOUCHER = "used_voucher"
     UNUSED_VOUCHER = "unused_voucher"
     RELAPSE = "relapse"
+    ADD_VOUCHER = "add_voucher"
 
 class MessageKey(str, Enum):
     RESULT = "result"
@@ -23,6 +24,7 @@ class ConfigKey(str, Enum):
     ETHERNET = "ethernet"
     HOST = "host"
     PORT = "port"
+    MILITARY_TIME = "military_time"
     DEBUG = "debug"
 
 class StorageKey(str, Enum):

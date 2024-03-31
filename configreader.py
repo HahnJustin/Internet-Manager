@@ -26,6 +26,11 @@ def get_storage() -> dict:
         json_data = json.load(f)
     return json_data
 
+def force_storage(forced_json_data):
+    with open(Paths.JSON_FILE, 'w') as f:
+        json.dump(forced_json_data, f)
+    json_data = forced_json_data
+
 def save_storage():
     with open(Paths.JSON_FILE, 'w') as f:
         json.dump(json_data, f)
@@ -56,6 +61,11 @@ def unuse_voucher(time):
 def remove_voucher(time):
     if time in json_data[StorageKey.VOUCHERS_USED]:
         json_data[StorageKey.VOUCHERS_USED].remove(time)
+        save_storage()
+
+def add_voucher():
+    if json_data and StorageKey.VOUCHERS_USED in json_data:
+        json_data[StorageKey.VOUCHER] += 1
         save_storage()
 
 def reset_relapse_time():

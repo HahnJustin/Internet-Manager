@@ -6,7 +6,7 @@ port: 65432
 
 # Time the internet will be cut off
 shutdown_times:
-  - "22:13:50"
+  - "20:40:00"
   - "22:17:00"
   - "22:24:00"
   - "16:00:00"
@@ -39,4 +39,5 @@ ethernet:
   - "Ethernet 2"
   - "NordLynx"
 
+military_time: false
 debug: true
