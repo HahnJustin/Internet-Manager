@@ -118,6 +118,11 @@ class Message:
         elif action == Actions.GRAB_STORAGE:
             storage = configreader.get_storage()
             content = {MessageKey.RESULT: storage}
+        elif action == Actions.RELAPSE:
+            internet_management.turn_on_wifi()
+            internet_management.turn_on_ethernet()
+            configreader.reset_relapse_time()
+            content = {MessageKey.RESULT: "attempted to turn on internet, relapse acknowledged"}
         else:
             content = {MessageKey.RESULT: f"Error: invalid action '{action}'."}
         content_encoding = "utf-8"

@@ -58,5 +58,10 @@ def remove_voucher(time):
         json_data[StorageKey.VOUCHERS_USED].remove(time)
         save_storage()
 
+def reset_relapse_time():
+    if json_data:
+        json_data[StorageKey.SINCE_LAST_RELAPSE] =  datetime.strftime(datetime.now(), '%m/%d/%y %H:%M:%S')
+        save_storage()
+
 def str_to_datetime(time : str) -> datetime:
     return datetime.strptime(time, '%m/%d/%y %H:%M:%S')

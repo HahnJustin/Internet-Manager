@@ -32,6 +32,9 @@ GUI_THREAD_TIME = 1000
 # Time is in seconds
 SAVE_THREAD_TIME = 3
 
+internet_on = True
+admin_on = True
+
 local_vouchers = 0
 
 global now
@@ -48,7 +51,12 @@ class time_action_data():
         self.datetime = time
         self.button = button
         self.vouched = False
-        self.button.configure(image=get_button_icon(self), compound="right", anchor='e', corner_radius=0, command= self.click)
+        self.button.configure(image=get_button_icon(self),
+                              compound="right",
+                              anchor='e', 
+                              corner_radius=0, 
+                              command= self.click,
+                              text_color_disabled="white")
 
     def click(self):
         global local_vouchers
@@ -65,12 +73,15 @@ class time_action_data():
 
     def make_vouched(self):
         date_time = self.datetime.strftime("%H:%M:%S")
-        self.button.configure(text=f"{date_time} | -:--", fg_color=VOUCHED_COLOR, image=get_image(Paths.ASSETS_FOLDER + "/mini_voucher.png"))
+        vouched_color = Color(VOUCHED_COLOR)
+        hvr_color = Color(rgb=(vouched_color.red/1.4, vouched_color.green/1.4, vouched_color.blue/1.2))
+        self.button.configure(text=f"{date_time} | -:--", fg_color=VOUCHED_COLOR, hover_color=str(hvr_color), image=get_image(Paths.ASSETS_FOLDER + "/mini_voucher.png"))
         self.vouched = True
 
     def make_unvouched(self):
         self.button.configure(image=get_button_icon(self), compound="right", anchor='e', corner_radius=0, command= self.click)
         self.update_gui()
+        self.update_color()
         self.vouched = False
 
     def update_gui(self):
@@ -79,7 +90,12 @@ class time_action_data():
         delta = self.datetime - now
         time_left = ':'.join(str(delta).split(':')[:2])
         date_time = self.datetime.strftime("%H:%M:%S")
-        self.button.configure(text=f"{date_time} | {time_left}", fg_color=str(self.get_color()))
+        self.button.configure(text=f"{date_time} | {time_left}")
+
+    def update_color(self):
+        color = self.get_color()
+        hvr_color = Color(rgb=(color.red/1.4, color.green/1.4, color.blue/1.2))
+        self.button.configure(fg_color=str(self.get_color()), hover_color=str(hvr_color))
 
     def get_color(self) -> Color:
         delta = self.datetime - now
@@ -127,7 +143,8 @@ def create_request(action, value):
         )
     elif( action == Actions.INTERNET_ON or action == Actions.INTERNET_OFF or 
           action == Actions.GRAB_CONFIG or action == Actions.ADMIN_STATUS or
-          action == Actions.INTERNET_STATUS or action == Actions.GRAB_STORAGE):
+          action == Actions.INTERNET_STATUS or action == Actions.GRAB_STORAGE or
+          action == Actions.RELAPSE):
         return dict(
             type="text/json",
             encoding="utf-8",
@@ -188,16 +205,16 @@ def update_gui():
     global now
     global date_label
     global time_label
+    global internet_on
 
     (date, time) = get_datetime()
     date_label.configure(text=date)
     time_label.configure(text=time)
 
     soonest_time_delta = time_action_buttons[0].datetime  - now
-    time_until_label.configure(text=':'.join(str(soonest_time_delta).split(':')[:2]))
+    time_until_label.configure(text=':'.join(str(soonest_time_delta).split(':')[:2]), text_color=str(time_action_buttons[0].get_color()))
 
     now = datetime.now()
-    tomorrow = now + timedelta(days=1)
 
     # shutdown label maintenance
     for data in time_action_buttons:
@@ -207,30 +224,41 @@ def update_gui():
         # actual shutdown
         if data.datetime > now:
             continue
-        if type(data) == shutdown_data:
+        if type(data) == shutdown_data or type(data) == enforced_shutdown_data:
             set_icon(False)
             show_status("Internet Shutdown Triggered", False)
+            toggle_relapse_button(True)
+            internet_on = True
         if type(data) == internet_up_data:
             set_icon(True)
             show_status("Internet Reboot Triggered", True)
+            toggle_relapse_button(False)
+            internet_on = False
         recalculate_time(data)
         sort_labels()
 
+def update_button_color():
+    for data in time_action_buttons:
+        if not data.vouched:
+            data.update_color()
+
 def recalculate_time(data: time_action_data):
+   global tomorrow
+   tomorrow = now + timedelta(days=1)
    data.datetime = data.datetime.replace(day=tomorrow.day)
    data.make_unvouched()
 
 def get_datetime():
     now = datetime.now()
-    date = now.strftime("%m/%d/%Y")
+    date = now.strftime("%#m-%#d-%Y")
     time = now.strftime("%H:%M:%S")
     return date, time
 
 def show_status(status : str, positive : bool):
     if not positive:
-        status_label.configure(text=status, text_color="red")
+        status_label.configure(text=status, image=get_image(Paths.ASSETS_FOLDER + "/red_ribbon.png"))
     else:
-        status_label.configure(text=status, text_color="blue")
+        status_label.configure(text=status, image=get_image(Paths.ASSETS_FOLDER + "/blue_ribbon.png"))
     status_label.pack()
     run_function_in_minute(lambda: status_label.pack_forget())
 
@@ -366,6 +394,59 @@ def _next_frame(frame : customtkinter.CTkImage, label, frames, restart=False):
         return
     label.configure(image=frame)
 
+def manual_override():
+    top= customtkinter.CTkToplevel(app)
+   
+    x = app.winfo_rootx()
+    y = app.winfo_rooty()
+    height = app.winfo_height()
+    width = app.winfo_width()
+    top.geometry("+%d+%d" % (x-125+width/2,y-50+height/2))
+    top.minsize(400, 250)
+    top.maxsize(400, 250)
+    top.attributes('-topmost',True)
+    top.title("Pathetic")
+    label = customtkinter.CTkLabel(top, text= f"Are you really sure that you want to end \n your streak of {streak} and turn on the internet?", font=('Mistral 18 bold', 20), pady=10)
+    label.pack(side='top')
+    internet_on = CTkButton(top, text = 'Forsake your Honor',
+                        command= lambda : relapse(top),
+                        hover_color='#691114',
+                        font=('Mistral 18 bold', 20),
+                        fg_color="#b51b20")  
+    internet_on.place(relx=0.5, rely=0.5, anchor="center")
+
+    top.grab_set()
+
+def relapse(top : customtkinter.CTkToplevel):
+    global streak
+    global last_relapse
+    global json_data
+
+    top.destroy()
+    streak = 0
+    show_status("User succumbed to temptation", True)
+    do_request(Actions.RELAPSE, "")
+
+    json_data[StorageKey.SINCE_LAST_RELAPSE] = datetime.strftime(datetime.now(), '%m/%d/%y %H:%M:%S')
+    last_relapse = get_last_relapse()
+    update_streak_graphics()
+    toggle_relapse_button(False)
+    internet_on = True
+
+def get_last_relapse() -> datetime:
+    global json_data
+    global cfg
+
+    last_relapse = datetime.strptime(json_data[StorageKey.SINCE_LAST_RELAPSE], '%m/%d/%y %H:%M:%S')
+    cutoff_time = datetime.strptime(cfg[ConfigKey.STREAK_SHIFT], '%H:%M')
+    return last_relapse.replace(hour=cutoff_time.hour, minute=cutoff_time.minute)
+
+def toggle_relapse_button(on : bool):
+    if on:
+        relapse_button.pack(side='bottom', anchor='s', expand=False)
+    else:
+        relapse_button.pack_forget()
+
 # no clue why this works, but it allows the taskbar icon to be custom
 myappid = 'mycompany.myproduct.subproduct.version' # arbitrary string
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
@@ -383,9 +464,7 @@ cfg = do_request(Actions.GRAB_CONFIG, "")
 json_data = do_request(Actions.GRAB_STORAGE, "")
 
 # Defining last time since internet override, used in streak calc
-last_relapse = datetime.strptime(json_data[StorageKey.SINCE_LAST_RELAPSE], '%m/%d/%y %H:%M:%S')
-cutoff_time = datetime.strptime(cfg[ConfigKey.STREAK_SHIFT], '%H:%M')
-last_relapse = last_relapse.replace(hour=cutoff_time.hour, minute=cutoff_time.minute)
+last_relapse = get_last_relapse()
 
 # Defining local vouchers amount
 local_vouchers = json_data[StorageKey.VOUCHER]
@@ -402,6 +481,7 @@ customtkinter.set_default_color_theme("blue")
 # Our app frame
 app = customtkinter.CTk()
 app.geometry("720x480")
+app.minsize(600, 350)
 app.title("Internet Manager")
 app_bg_color = app.cget('bg')
 
@@ -456,37 +536,54 @@ for up_time in cfg[ConfigKey.UP_TIMES]:
 sort_labels()
 
 # Adding Time
-date_label = customtkinter.CTkLabel(top_frame, text="Date", font=("Arial", 20))
-time_label = customtkinter.CTkLabel(top_frame, text=string_now(), font=("Arial", 40))
+date_label = customtkinter.CTkLabel(top_frame, text_color="#666e7a", text="Date", font=("Arial", 20), pady=0)
+time_label = customtkinter.CTkLabel(top_frame, text=string_now(), font=("old english text mt", 40), padx=10)
 
 date_label.pack(side='top')
 time_label.pack(side='top')
 
-time_until_label = tkinter.Label(top_frame, text='', background=top_frame_fg_color , foreground="gray", font=("Arial", 20))
+time_until_label = customtkinter.CTkLabel(top_frame, text='', font=("Arial", 20))
 time_until_label.pack()
 
-status_label = customtkinter.CTkLabel(app, text=f"", text_color="black", image=get_image(Paths.ASSETS_FOLDER + "/ribbon.png"), font=("old english text mt",20), compound='center', anchor='n')
+status_label = customtkinter.CTkLabel(app, text=f"", text_color="white", font=("old english text mt",20), compound='center', anchor='n')
 status_label.pack_forget()
 
 # Initial Status
-if not do_request(Actions.ADMIN_STATUS, ""):
-    show_status("Server is not running in Admin", False)
-elif do_request(Actions.INTERNET_STATUS, ""):
+if do_request(Actions.INTERNET_STATUS, ""):
+    internet_on = True
     show_status("Internet is On", True)
     set_icon(True)
 else:
+    internet_on = False
     show_status("Internet is Off", False)
     set_icon(False)
 
-globe_frames = get_frames(Paths.ASSETS_FOLDER + "/globular.gif")
-globe_gif = customtkinter.CTkLabel(top_left_frame, text="", image=globe_frames[1])
-globe_gif.pack(side='right', anchor='e', expand=True)
-app.after(100, _play_gif, globe_gif, globe_frames)
+# Admin Check
+if not do_request(Actions.ADMIN_STATUS, ""):
+    show_status("Server is not running in Admin", False)
+    admin_on = False
 
-globe_frames = get_frames(Paths.ASSETS_FOLDER + "/globular.gif")
-globe_gif = customtkinter.CTkLabel(top_right_frame, text="", image=globe_frames[1])
-globe_gif.pack(side='left', anchor='w', expand=True)
-app.after(100, _play_gif, globe_gif, globe_frames)
+
+if admin_on:
+    # left globe
+    globe_frames = get_frames(Paths.ASSETS_FOLDER + "/globular.gif")
+    globe_gif = customtkinter.CTkLabel(top_left_frame, text="", image=globe_frames[1])
+    globe_gif.pack(side='right', anchor='e', expand=True)
+    app.after(100, _play_gif, globe_gif, globe_frames)
+
+    # right globe
+    globe_frames = get_frames(Paths.ASSETS_FOLDER + "/globular.gif")
+    globe_gif = customtkinter.CTkLabel(top_right_frame, text="", image=globe_frames[1])
+    globe_gif.pack(side='left', anchor='w', expand=True)
+    app.after(100, _play_gif, globe_gif, globe_frames)
+else:
+    # left caution
+    caution_right = customtkinter.CTkLabel(top_left_frame, text="", image=get_image(Paths.ASSETS_FOLDER + "/caution.png"))
+    caution_right.pack(side='right', anchor='e', expand=True)
+
+    # right caution
+    caution_left = customtkinter.CTkLabel(top_right_frame, text="", image=get_image(Paths.ASSETS_FOLDER + "/caution.png"))
+    caution_left.pack(side='left', anchor='w', expand=True)
 
 # Debug turn internet on and off buttons
 if cfg[ConfigKey.DEBUG]:
@@ -513,6 +610,13 @@ if cfg[ConfigKey.DEBUG]:
     total_shutdown.pack(side = 'top', expand=True)
 """
 
+# manual on button
+relapse_button = CTkButton(app, text = 'Override Turn On Internet',
+                        command = manual_override,
+                        hover_color='#691114',
+                        fg_color="#b51b20")
+toggle_relapse_button(not internet_on)
+
 streak = math.floor((now - last_relapse).total_seconds() / 86400)
 
 streak_icon = customtkinter.CTkLabel(bottom_frame, text="")
@@ -531,13 +635,16 @@ red_voucher_label = customtkinter.CTkLabel(bottom_left_frame, text=f"x{voucher_l
                                         compound='left', anchor='e', padx = 5)
 red_voucher_label.pack(side='right', anchor='e', expand=True)
 
-# Apparently resizes the window
-app.update_idletasks()
-app.minsize(app.winfo_width(), app.winfo_height())
 
 # Run time update
 update_gui()
 t = threading.Thread(target=lambda: every(1, update_gui))
+t.daemon = True
+t.start()
+
+# Run time update
+update_button_color()
+t = threading.Thread(target=lambda: every(60, update_button_color))
 t.daemon = True
 t.start()
 

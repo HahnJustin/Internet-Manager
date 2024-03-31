@@ -10,6 +10,7 @@ class Actions(str, Enum):
     ADMIN_STATUS = "admin_status"
     USED_VOUCHER = "used_voucher"
     UNUSED_VOUCHER = "unused_voucher"
+    RELAPSE = "relapse"
 
 class MessageKey(str, Enum):
     RESULT = "result"
