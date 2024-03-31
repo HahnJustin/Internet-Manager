@@ -40,4 +40,4 @@ ethernet:
   - "NordLynx"
 
 military_time: false
-debug: true
+debug: false

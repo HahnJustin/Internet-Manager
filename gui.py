@@ -37,6 +37,7 @@ VOUCHER_ODDS = 60
 
 internet_on = True
 admin_on = True
+stop_gifs = False
 
 used_voucher_today = False
 local_vouchers = 0
@@ -260,6 +261,7 @@ def update_gui():
             set_icon(False)
             show_status("Internet Shutdown Triggered", False)
             toggle_relapse_button(True)
+            toggle_globe_animation(False)
             internet_on = False
             if random.randint(0,99) < LOOT_BOX_ODDS and not used_voucher_today:
                 toggle_loot_box(True)
@@ -267,6 +269,7 @@ def update_gui():
             set_icon(True)
             show_status("Internet Reboot Triggered", True)
             toggle_relapse_button(False)
+            toggle_globe_animation(True)
             internet_on = True
         recalculate_time(data)
         sort_labels()
@@ -382,11 +385,14 @@ def update_voucher_label():
     voucher_label.configure(text=f"x{local_vouchers}")
 
 def time_action_button_create(time : str, label_type : ConfigKey) -> time_action_data:
+    global tomorrow
+    global now
+
     target = datetime.strptime(time, '%H:%M:%S')
     target = target.replace(year=now.year, month=now.month, day=now.day)
 
     if now > target:
-      target = target.replace(day=tomorrow.day)
+       target = target.replace(year=tomorrow.year, month=tomorrow.month, day=tomorrow.day)
 
     action_time_button = customtkinter.CTkButton(widget_frame, text=target)
     action_time_button.pack(ipadx=10, ipady=10, fill="both")
@@ -427,8 +433,18 @@ def get_frames(img):
             index += 1
         return frames
 
-def _play_gif(label, frames):
+def _play_gif_once(label, frames):
 
+    total_delay = 0
+    delay_frames = 100
+
+    for frame in frames:
+        app.after(total_delay, _next_frame, frame, label, frames)
+        total_delay += delay_frames
+
+def _play_gif(label, frames):
+    if stop_gifs:
+        return
     total_delay = 0
     delay_frames = 100
 
@@ -481,6 +497,8 @@ def relapse(top : customtkinter.CTkToplevel):
     last_relapse = get_last_relapse()
     update_streak_graphics()
     toggle_relapse_button(False)
+    toggle_globe_animation(True)
+    set_icon(True)
     internet_on = True
 
 def get_last_relapse() -> datetime:
@@ -531,6 +549,24 @@ def get_loot():
     
     run_function_in_minute(lambda : toggle_loot_box(False))
     
+def toggle_globe_animation(enabled : bool):
+    global globe_frames
+    global stop_gifs
+
+    stop_gifs = not enabled
+    if enabled:
+        globe_enable_left_frames = get_frames(Paths.ASSETS_FOLDER + "/globular_on_left.gif")
+        globe_enable_right_frames = get_frames(Paths.ASSETS_FOLDER + "/globular_on_right.gif")
+        app.after(1, _play_gif_once, left_globe_gif, globe_enable_left_frames)
+        app.after(1, _play_gif_once, right_globe_gif, globe_enable_right_frames)
+        app.after(2000, _play_gif, left_globe_gif, globe_frames)
+        app.after(2000, _play_gif, right_globe_gif, globe_frames)
+    else:
+        globe_disable_left_frames = get_frames(Paths.ASSETS_FOLDER + "/globular_off_left.gif")
+        globe_disable_right_frames = get_frames(Paths.ASSETS_FOLDER + "/globular_off_right.gif")
+        app.after(1, _play_gif_once, left_globe_gif, globe_disable_left_frames)
+        app.after(1, _play_gif_once, right_globe_gif, globe_disable_right_frames)
+
 
 # no clue why this works, but it allows the taskbar icon to be custom
 myappid = 'mycompany.myproduct.subproduct.version' # arbitrary string
@@ -585,7 +621,7 @@ app.title("Internet Manager")
 app_bg_color = app.cget('bg')
 
 # Shutdown label parent
-widget_frame = customtkinter.CTkFrame(app, fg_color='#697592', corner_radius=0)
+widget_frame = customtkinter.CTkFrame(app, fg_color='#404654', corner_radius=0)
 widget_frame.pack(side='left', fill="y")
 
 # Top label parent
@@ -666,15 +702,15 @@ if not do_request(Actions.ADMIN_STATUS, ""):
 if admin_on:
     # left globe
     globe_frames = get_frames(Paths.ASSETS_FOLDER + "/globular.gif")
-    globe_gif = customtkinter.CTkLabel(top_left_frame, text="", image=globe_frames[1])
-    globe_gif.pack(side='right', anchor='e', expand=True)
-    app.after(100, _play_gif, globe_gif, globe_frames)
+    left_globe_gif = customtkinter.CTkLabel(top_left_frame, text="", image=globe_frames[1])
+    left_globe_gif.pack(side='right', anchor='e', expand=True)
 
     # right globe
-    globe_frames = get_frames(Paths.ASSETS_FOLDER + "/globular.gif")
-    globe_gif = customtkinter.CTkLabel(top_right_frame, text="", image=globe_frames[1])
-    globe_gif.pack(side='left', anchor='w', expand=True)
-    app.after(100, _play_gif, globe_gif, globe_frames)
+    right_globe_gif = customtkinter.CTkLabel(top_right_frame, text="", image=globe_frames[1])
+    right_globe_gif.pack(side='left', anchor='w', expand=True)
+
+    toggle_globe_animation(internet_on)
+
 else:
     # left caution
     caution_right = customtkinter.CTkLabel(top_left_frame, text="", image=get_image(Paths.ASSETS_FOLDER + "/caution.png"))
@@ -696,9 +732,18 @@ if cfg[ConfigKey.DEBUG]:
     turn_off.pack(side = 'left', anchor='e', expand=False)
     turn_on.pack(side='left', anchor='w', expand=False)
 
+    test_gif = CTkButton(debug_frame, text = 'Gif Toggle Off',
+                            command = lambda : toggle_globe_animation(False))  
+    test_gif.pack(side='right', anchor='w', expand=False)
+
+    test_gif_on = CTkButton(debug_frame, text = 'Gif Toggle On',
+                            command = lambda : toggle_globe_animation(True))  
+    test_gif_on.pack(side='right', anchor='w', expand=False)
+    """
     test_loot_box = CTkButton(debug_frame, text = 'Test Lootbox',
                             command = lambda : toggle_loot_box(True))  
     test_loot_box.pack(side='right', anchor='w', expand=False)
+    """
 
 # manual on button
 relapse_button = CTkButton(app, text = 'Override Turn On Internet',

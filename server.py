@@ -66,11 +66,14 @@ def every(delay, task):
             next_time += (time.time() - next_time) // delay * delay + delay
 
 def time_data_create(time : str, action : Actions):
+    global tomorrow
+    global now
+
     target = datetime.strptime(time, '%H:%M:%S')
     target = target.replace(year=now.year, month=now.month, day=now.day)
 
     if now > target:
-      target = target.replace(day=tomorrow.day)
+      target = target.replace(year=tomorrow.year, month=tomorrow.month, day=tomorrow.day)
 
     time_datas.append(time_action_data(target, action))
 
@@ -94,15 +97,15 @@ def update():
         # vouched used condition
         if str(data) in json_data[StorageKey.VOUCHERS_USED]:
             configreader.remove_voucher(str(data))
-            print(f"{string_now()} - [VOUCHED] {data.action}")
+            print(f"{data} - [VOUCHED] {data.action}")
         elif data.action == Actions.INTERNET_OFF:
             internet_management.turn_off_wifi()
             internet_management.turn_off_ethernet()
-            print(f"{string_now()} - {data.action}")
+            print(f"{data} - {data.action}")
         elif data.action == Actions.INTERNET_ON:
             internet_management.turn_on_wifi()
             internet_management.turn_on_ethernet()
-            print(f"{string_now()} - {data.action}")
+            print(f"{data} - {data.action}")
         recalculate_time(data)
 
 def recalculate_time(data: time_action_data):
