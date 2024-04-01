@@ -1,7 +1,8 @@
-# Times should be expressed in military time and in string form, (Hour:Minutes or Hour:Minutes:Seconds) 
+# Config Class for Internet Manager's Server Component 
+# All Times must be in military time 
+# By Justin Hahn 2024 [https://github.com/HahnJustin] 
 
 host: "127.0.0.1"
-
 port: 65432
 
 # Time the internet will be cut off
@@ -19,13 +20,12 @@ enforced_shutdown_times:
 up_times:
   - "5:00:00"
 
-# Time with which determines when a new day is in streak terms
-streak_shift: "12:34"
-
 ethernet:
   - "Ethernet"
   - "Ethernet 2"
   - "NordLynx"
 
+# Time with which determines when a new day is in streak terms
+streak_shift: "12:34"
+
 military_time: false
-debug: false

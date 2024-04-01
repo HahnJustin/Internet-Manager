@@ -1,18 +1,37 @@
 import yaml
 import os
 import json
-from datetime import datetime, timedelta
+from os import path
+from datetime import datetime
 from libuniversal import ConfigKey, StorageKey, Paths
 
 cfg = None
 json_data = {}
+
+default_cfg = {ConfigKey.HOST.value: str("127.0.0.1"),
+            ConfigKey.PORT.value : 65432, 
+            ConfigKey.SHUTDOWN_TIMES.value : ["23:00:00","0:00:00"], 
+            ConfigKey.ENFORCED_SHUTDOWN_TIMES.value: ["1:00:00","2:00:00"],
+            ConfigKey.UP_TIMES.value : ["5:00:00"],
+            ConfigKey.STREAK_SHIFT.value: "4:00",
+            ConfigKey.ETHERNET.value : ["Ethernet", "Ethernet 2"],
+            ConfigKey.MILITARY_TIME.value : True}
 
 def get_config() -> dict:
     global cfg
     
     if cfg is None:
         # Reading config
-        with open(Paths.CONFIG_FILE) as f:
+        try:
+            f = open(Paths.CONFIG_FILE)
+        except OSError:
+            with open(Paths.CONFIG_FILE, 'w') as yaml_file:
+                yaml_file.write("# Config Class for Internet Manager's Server Component \n")
+                yaml_file.write("# All Times must be in military time \n")
+                yaml_file.write("# By Justin Hahn 2024 [https://github.com/HahnJustin] \n \n")
+                yaml.dump(default_cfg, yaml_file)
+            f = open(Paths.CONFIG_FILE)
+        with f:
             cfg = yaml.load(f, Loader=yaml.FullLoader)
 
     return cfg
@@ -21,22 +40,21 @@ def get_storage() -> dict:
     global json_data
     
     # apparently empty dicts evaluate to false
-    if not json_data and os.path.isfile(Paths.JSON_FILE):
-        f = open(Paths.JSON_FILE) 
+    if not json_data and os.path.isfile(get_json_path()):
+        f = open(get_json_path()) 
         json_data = json.load(f)
     return json_data
 
 def force_storage(forced_json_data):
-    with open(Paths.JSON_FILE, 'w') as f:
-        json.dump(forced_json_data, f)
+    global json_data
     json_data = forced_json_data
+    save_storage()
 
 def save_storage():
-    with open(Paths.JSON_FILE, 'w') as f:
+    with open(get_json_path(), 'w') as f:
         json.dump(json_data, f)
 
 def use_voucher(time):
-    real_time = str_to_datetime(time)
     json_data[StorageKey.VOUCHER] -= 1
 
     if not StorageKey.VOUCHERS_USED in json_data:
@@ -45,9 +63,6 @@ def use_voucher(time):
     save_storage()
 
     return f"Used voucher on time {time}"
-    #add voucher_used tag to json storage that takes in a list of time stamps
-    #basically every time a time data tries to be triggered check the vouched list
-    #is that exact time is in the vouched list, ignore the trigger, remove it from the list (call unuse_voucher)
 
 # adds a voucher number to json file then removes voucher
 def unuse_voucher(time):
@@ -80,3 +95,6 @@ def reset_relapse_time():
 
 def str_to_datetime(time : str) -> datetime:
     return datetime.strptime(time, '%m/%d/%y %H:%M:%S')
+
+def get_json_path():
+    return path.abspath(path.join(path.dirname(__file__), Paths.JSON_FILE))

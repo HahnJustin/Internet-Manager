@@ -170,7 +170,7 @@ tomorrow = now + timedelta(days=1)
 
 # Reading/Initializing storage json
 json_data = {}
-if os.path.isfile(Paths.JSON_FILE):
+if os.path.isfile(configreader.get_json_path()):
    f = open(Paths.JSON_FILE) 
    json_data = json.load(f)
 else:

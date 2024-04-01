@@ -19,6 +19,7 @@ from queue import Queue
 from colour import Color
 from datetime import datetime, timedelta
 from PIL import Image
+from ruamel.yaml.comments import CommentedMap as OrderedDict
 
 COLOR_AMOUNT = 100
 SHUTDOWN_COLORS = [(224, 0, 0), (69, 75, 92),(0, 0, 255),(0, 0, 0)]
@@ -443,7 +444,7 @@ def set_icon(internet_on : bool):
         img = tkinter.PhotoImage(file=resource_path(Paths.ASSETS_FOLDER + "/globex5.png"))
     else:
         app.iconbitmap(resource_path(Paths.ASSETS_FOLDER + "/globe_no.ico"))
-        img = tkinter.PhotoImage(resource_path(file=Paths.ASSETS_FOLDER + "/no_globex5.png"))
+        img = tkinter.PhotoImage(file=resource_path(Paths.ASSETS_FOLDER + "/no_globex5.png"))
     #custom_img = customtkinter.Ctkim
     app.wm_iconphoto(True, img)
 
@@ -624,7 +625,14 @@ ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 sel = selectors.DefaultSelector()
 
 # Reading config
-with open(Paths.CLIENT_CONFIG_FILE) as f:
+try:
+    f = open(Paths.CLIENT_CONFIG_FILE)
+except OSError:
+    cfg = {ConfigKey.HOST.value: str("127.0.0.1"), ConfigKey.PORT.value : 65432}
+    with open(Paths.CLIENT_CONFIG_FILE, 'w') as yaml_file:
+        yaml.dump(cfg, yaml_file)
+    f = open(Paths.CLIENT_CONFIG_FILE)
+with f:
     cfg = yaml.load(f, Loader=yaml.FullLoader)
     host = cfg[ConfigKey.HOST]
     port = cfg[ConfigKey.PORT]
@@ -632,6 +640,9 @@ with open(Paths.CLIENT_CONFIG_FILE) as f:
 cfg = do_request(Actions.GRAB_CONFIG, "")
 
 json_data = do_request(Actions.GRAB_STORAGE, "")
+
+if cfg is None or json_data is None:
+     raise Exception("Internet Manager cannot find a running server")
 
 # Defining local vouchers amount
 local_vouchers = json_data[StorageKey.VOUCHER]
@@ -783,7 +794,7 @@ vouched_icon = customtkinter.CTkLabel(app, text="", image=get_image(Paths.ASSETS
 toggle_vouched_icon(used_voucher_today)
 
 # Debug turn internet on and off buttons
-if cfg[ConfigKey.DEBUG]:
+if ConfigKey.DEBUG in cfg and cfg[ConfigKey.DEBUG]:
     debug_frame = customtkinter.CTkFrame(app)
     debug_frame.pack(side='bottom', fill="x")
 
