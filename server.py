@@ -56,14 +56,12 @@ class StoppableThread(threading.Thread):
         return self._stop_event.is_set()
 
 def every(delay, task):
-    next_time = time.time() + delay
     while True:
-        time.sleep(max(0, next_time - time.time()))
+        time.sleep(delay)
         try:
             task()
         except Exception:
             traceback.print_exc()
-            next_time += (time.time() - next_time) // delay * delay + delay
 
 def time_data_create(time : str, action : Actions):
     global tomorrow
@@ -212,7 +210,7 @@ elif time_datas[-1].action == Actions.INTERNET_ON:
     internet_management.turn_on_wifi()
     internet_management.turn_on_ethernet()
 
-data_thread = StoppableThread(target=lambda: every(1, update))
+data_thread = StoppableThread(target=lambda: every(0.25, update))
 data_thread.daemon = True
 data_thread.start()
 
@@ -222,15 +220,15 @@ host, port = cfg[ConfigKey.HOST], cfg[ConfigKey.PORT]
 lsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 # Avoid bind() exception: OSError: [Errno 48] Address already in use
 lsock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+lsock.setblocking(False)
 lsock.bind((host, port))
 lsock.listen()
 print(f"Listening on {(host, port)}")
-lsock.setblocking(False)
 sel.register(lsock, selectors.EVENT_READ, data=None)
 
 try:
     while True:
-        events = sel.select(timeout=None)
+        events = sel.select(timeout=1)
         for key, mask in events:
             if key.data is None:
                 accept_wrapper(key.fileobj)
@@ -244,6 +242,7 @@ try:
                         f"{traceback.format_exc()}"
                     )
                     message.close()
+        time.sleep(0.01)
 except KeyboardInterrupt:
     print("Caught keyboard interrupt, exiting")
 finally:

@@ -125,7 +125,7 @@ class Message:
             configreader.set_manual_override(True)
             content = {MessageKey.RESULT: "attempted to turn on internet, relapse acknowledged"}
         elif action == Actions.ADD_VOUCHER:
-            configreader.add_voucher
+            configreader.add_voucher()
             content = {MessageKey.RESULT: "added voucher"}
         else:
             content = {MessageKey.RESULT: f"Error: invalid action '{action}'."}

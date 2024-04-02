@@ -561,7 +561,7 @@ def toggle_relapse_button(on : bool):
 
 def toggle_loot_box(on : bool):
     if on:
-        internet_box_button.configure(text = 'You found an internet box!',
+        internet_box_button.configure(text = 'You found an internet box!', state="enabled",
                         image=get_image(Paths.ASSETS_FOLDER + "/internet_box.png")) 
         internet_box_button.pack(fill="both", expand=True, padx=20, pady=20)
         internet_box_button.bind("<Enter>", lambda e: internet_box_button.configure(text="Click to open!"))
@@ -787,12 +787,6 @@ else:
     caution_left = customtkinter.CTkLabel(top_right_frame, text="", image=get_image(Paths.ASSETS_FOLDER + "/caution.png"))
     caution_left.pack(side='left', anchor='w', expand=True)
 
-manual_icon = customtkinter.CTkLabel(app, text="", image=get_image(Paths.ASSETS_FOLDER + "/embarrased_globe.png"))
-toggle_manual_icon(used_manual_override)
-
-vouched_icon = customtkinter.CTkLabel(app, text="", image=get_image(Paths.ASSETS_FOLDER + "/voucher_globe.png"))
-toggle_vouched_icon(used_voucher_today)
-
 # Debug turn internet on and off buttons
 if ConfigKey.DEBUG in cfg and cfg[ConfigKey.DEBUG]:
     debug_frame = customtkinter.CTkFrame(app)
@@ -816,10 +810,19 @@ if ConfigKey.DEBUG in cfg and cfg[ConfigKey.DEBUG]:
     test_loot_box = CTkButton(debug_frame, text = 'Test Lootbox',
                             command = lambda : toggle_loot_box(True))  
     test_loot_box.pack(side='right', anchor='w', expand=False)
-    
+
+
+extra_bottom_frame = customtkinter.CTkFrame(app)
+extra_bottom_frame.pack(side='bottom', fill="x")
+
+manual_icon = customtkinter.CTkLabel(extra_bottom_frame, text="", image=get_image(Paths.ASSETS_FOLDER + "/embarrased_globe.png"))
+toggle_manual_icon(used_manual_override)
+
+vouched_icon = customtkinter.CTkLabel(extra_bottom_frame, text="", image=get_image(Paths.ASSETS_FOLDER + "/voucher_globe.png"))
+toggle_vouched_icon(used_voucher_today)
 
 # manual on button
-relapse_button = CTkButton(app, text = 'Override Turn On Internet',
+relapse_button = CTkButton(extra_bottom_frame, text = 'Override Turn On Internet',
                         command = manual_override,
                         hover_color='#691114',
                         fg_color="#b51b20")
