@@ -53,8 +53,8 @@ jobs:
     steps:   
       - uses: actions/checkout@v2
 
-      - name: Down All Artifacts
-        uses: actions/download-artifact@v4
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v2
 
       - uses: "marvinpinto/action-automatic-releases@latest"
         with:
