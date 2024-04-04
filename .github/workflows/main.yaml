@@ -1,0 +1,54 @@
+name: Package with PyInstaller
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build_internet_manager:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install Python Dependencies
+      uses: py-actions/py-dependency-install@v4
+      with:
+          path: "requirements/requirements-gui.txt"
+
+    - name: Package Application
+      uses: JackMcKew/pyinstaller-action-windows@main
+      with:
+        path: src
+        spec: internet_manager.spec
+
+    - uses: actions/upload-artifact@v2
+      with:
+        name: internet_manager
+        path: src/dist
+
+  build_server:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install Python Dependencies
+      uses: py-actions/py-dependency-install@v4
+      with:
+          path: "requirements/requirements-server.txt"
+
+    - name: Package Application
+      uses: JackMcKew/pyinstaller-action-windows@main
+      with:
+        path: src
+        spec: server.spec
+
+    - uses: actions/upload-artifact@v2
+      with:
+        name: server
+        path: src/dist

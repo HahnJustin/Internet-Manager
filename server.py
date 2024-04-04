@@ -1,23 +1,18 @@
 #!/usr/bin/env python3
 
 import threading
-import yaml
 import time, traceback
-import subprocess
 import json
 import os.path
 import sys
 import socket
 import selectors
-import types
 import libserver
 import internet_management
 import configreader
+from playsound import playsound
 from libuniversal import Actions, ConfigKey, StorageKey, Paths
-from queue import Queue
-from colour import Color
 from datetime import datetime, timedelta
-from enum import Enum
 
 SECONDS_DATA_UPDATE = 60
 
@@ -34,6 +29,10 @@ ASSET_FOLDER = "assets"
 global now
 global time_datas
 global json_data
+
+warned = False
+sound_on = True
+warning_sound_time = 15
 
 class time_action_data():
     def __init__(self, time : datetime, action : Actions):
@@ -54,6 +53,16 @@ class StoppableThread(threading.Thread):
 
     def stopped(self):
         return self._stop_event.is_set()
+
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
 
 def every(delay, task):
     while True:
@@ -76,35 +85,47 @@ def time_data_create(time : str, action : Actions):
     time_datas.append(time_action_data(target, action))
 
 def update():
-    global time_since_json_write
+    global sound_on
     global json_data
     global now
+    global warning_sound_time
+    global warned
 
     now = datetime.now()
+    json_data = configreader.get_storage()
 
     if now > cutoff_time:
         recalculate_cutoff_time()
         cull_vouchers()
         configreader.set_manual_override(False)
 
-    json_data = configreader.get_storage()
-    # label time check
-    for data in time_datas:
-        # actual shutdown
-        if data.datetime > now:
-            continue
-        # vouched used condition
-        if str(data) in json_data[StorageKey.VOUCHERS_USED]:
-            print(f"{data} - [VOUCHED] {data.action}")
-        elif data.action == Actions.INTERNET_OFF:
-            internet_management.turn_off_wifi()
-            internet_management.turn_off_ethernet()
-            print(f"{data} - {data.action}")
-        elif data.action == Actions.INTERNET_ON:
-            internet_management.turn_on_wifi()
-            internet_management.turn_on_ethernet()
-            print(f"{data} - {data.action}")
-        recalculate_time(data)
+    data = time_datas[0]
+    warning_time = data.datetime - timedelta(minutes=warning_sound_time)
+
+    if now > warning_time and not warned:
+        warned = True
+        play_sfx("warning.wav")
+
+    # actual shutdown
+    if data.datetime > now:
+        return
+    # vouched used condition
+    if str(data) in json_data[StorageKey.VOUCHERS_USED]:
+        play_sfx("vouched.wav")
+        print(f"{data} - [VOUCHED] {data.action}")
+    elif data.action == Actions.INTERNET_OFF:
+        play_sfx("internet_off.wav")
+        internet_management.turn_off_wifi()
+        internet_management.turn_off_ethernet()
+        print(f"{data} - {data.action}")
+    elif data.action == Actions.INTERNET_ON:
+        play_sfx("internet_on.wav")
+        internet_management.turn_on_wifi()
+        internet_management.turn_on_ethernet()
+        print(f"{data} - {data.action}")
+    recalculate_time(data)
+    sort_data()
+    warned = False
 
 def recalculate_time(data: time_action_data):
    global tomorrow
@@ -161,6 +182,12 @@ def cull_vouchers():
             json_data[StorageKey.VOUCHERS_USED].pop(i)
     configreader.force_storage(json_data)
     
+def play_sfx(sfx : str):
+    if sound_on:
+        try:
+            playsound(resource_path(Paths.SFX_FOLDER + '\\' + sfx))
+        except:
+            playsound(resource_path(Paths.SFX_FOLDER + '\\' + sfx))
 
 # Defining basic time variables
 now = datetime.now()
@@ -181,6 +208,12 @@ configreader.force_storage(json_data)
 
 # Reading config
 cfg = configreader.get_config()
+
+if ConfigKey.SOUND_ON in cfg:
+    sound_on = cfg[ConfigKey.SOUND_ON]
+
+if ConfigKey.WARNING_MINUTES in cfg:
+    warning_sound_time = cfg[ConfigKey.WARNING_MINUTES]
 
 # Modifying streak time
 recalculate_cutoff_time()

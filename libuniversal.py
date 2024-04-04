@@ -25,6 +25,8 @@ class ConfigKey(str, Enum):
     HOST = "host"
     PORT = "port"
     MILITARY_TIME = "military_time"
+    SOUND_ON = "sound_on"
+    WARNING_MINUTES = "warning_minutes"
     DEBUG = "debug"
 
 class StorageKey(str, Enum):
@@ -39,3 +41,4 @@ class Paths(str, Enum):
     CONFIG_FILE = "config.yaml"
     CLIENT_CONFIG_FILE = "client-config.yaml"
     ASSETS_FOLDER = "assets"
+    SFX_FOLDER = "sfx"

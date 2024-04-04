@@ -15,11 +15,9 @@ import ctypes
 import random
 from libuniversal import Actions, ConfigKey, StorageKey, Paths
 from customtkinter import CTkButton
-from queue import Queue
 from colour import Color
 from datetime import datetime, timedelta
 from PIL import Image
-from ruamel.yaml.comments import CommentedMap as OrderedDict
 
 COLOR_AMOUNT = 100
 SHUTDOWN_COLORS = [(224, 0, 0), (69, 75, 92),(0, 0, 255),(0, 0, 0)]
@@ -599,7 +597,7 @@ def toggle_globe_animation(enabled : bool):
     global internet_on
     global globe_on
 
-    if enabled == globe_on:
+    if enabled == globe_on or not admin_on:
         return
 
     stop_gifs = not enabled

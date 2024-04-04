@@ -15,7 +15,9 @@ default_cfg = {ConfigKey.HOST.value: str("127.0.0.1"),
             ConfigKey.UP_TIMES.value : ["5:00:00"],
             ConfigKey.STREAK_SHIFT.value: "4:00",
             ConfigKey.ETHERNET.value : ["Ethernet", "Ethernet 2"],
-            ConfigKey.MILITARY_TIME.value : True}
+            ConfigKey.MILITARY_TIME.value : True,
+            ConfigKey.SOUND_ON.value : True,
+            ConfigKey.WARNING_MINUTES.value : 15}
 
 def get_config() -> dict:
     global cfg

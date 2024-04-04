@@ -3,12 +3,7 @@ import subprocess
 import os.path
 import ctypes
 import configreader
-from libuniversal import Actions, ConfigKey, StorageKey, Paths
-from queue import Queue
-from colour import Color
-from datetime import datetime, timedelta
-from enum import Enum
-
+from libuniversal import ConfigKey
 
 # from https://github.com/abagh0703/turn-off-wifi
 CMD_BASE = 'cmd /c "{}"'  # first is remain/terminate, then is enable/disable
