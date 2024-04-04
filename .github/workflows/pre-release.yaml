@@ -19,7 +19,7 @@ jobs:
         spec: internet_manager.spec
         requirements: "requirements/requirements-gui.txt"
 
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v4
       with:
         name: internet_manager
         path: src/dist/windows
@@ -39,7 +39,7 @@ jobs:
         spec: server.spec
         requirements: "requirements/requirements-server.txt"
 
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v4
       with:
         name: server
         path: src/dist/windows
@@ -53,17 +53,12 @@ jobs:
       - uses: actions/checkout@v2
 
       - name: Download All Artifacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
+          
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
         with:
-          path: src/dist/windows
-      - uses: "marvinpinto/action-automatic-releases@latest"
-        with:
-          repo_token: "${{ secrets.GITHUB_TOKEN }}"
-          automatic_release_tag: "latest"
-          prerelease: true
-          title: "Development Build"
           files: |
-            LICENSE.txt
             *.exe
-            config.yaml
-            client-config.yaml
+            LICENSE
