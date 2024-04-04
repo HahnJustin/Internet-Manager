@@ -1,2 +1,5 @@
 customtkinter
 yaml
+playsound==1.2.2
+json
+PIL
