@@ -53,17 +53,22 @@ jobs:
     steps:   
       - uses: actions/checkout@v2
 
-      - name: Download All Artifacts
-        uses: actions/download-artifact@v2
+      - name: Download Server
+        uses: actions/download-artifact@v4
         with:
-          path: src/dist/windows
+          name: server
 
-      - uses: "marvinpinto/action-automatic-releases@latest"
+      - name: Download Gui
+        uses: actions/download-artifact@v4
         with:
-          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          name: internet_manager
+          
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
           prerelease: false
           files: |
-            LICENSE.txt
             *.exe
-            config.yaml
-            client-config.yaml
+            LICENSE
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
