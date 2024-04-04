@@ -17,7 +17,6 @@ jobs:
       with:
         path: src
         spec: internet_manager.spec
-        requirements: requirements/requirements-gui.txt
 
     - uses: actions/upload-artifact@v4
       with:
@@ -37,7 +36,6 @@ jobs:
       with:
         path: src
         spec: server.spec
-        requirements: "requirements/requirements-server.txt"
 
     - uses: actions/upload-artifact@v4
       with:
@@ -65,6 +63,7 @@ jobs:
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
+          allowUpdates: true
           tag_name: "latest"
           prerelease: true
           files: |
