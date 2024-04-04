@@ -55,6 +55,8 @@ jobs:
 
       - name: Download All Artifacts
         uses: actions/download-artifact@v2
+        with:
+          path: src/dist/windows
 
       - uses: "marvinpinto/action-automatic-releases@latest"
         with:
