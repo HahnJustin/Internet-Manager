@@ -10,14 +10,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: Package Application
       uses: JackMcKew/pyinstaller-action-windows@v0.1.2
       with:
         path: src
         spec: internet_manager.spec
-        requirements: "requirements/requirements-gui.txt"
+        requirements: requirements/requirements-gui.txt
 
     - uses: actions/upload-artifact@v4
       with:
@@ -30,14 +30,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: Package Application
       uses: JackMcKew/pyinstaller-action-windows@v0.1.2
       with:
         path: src
         spec: server.spec
-        requirements: "requirements/requirements-server.txt"
+        requirements: requirements/requirements-server.txt
 
     - uses: actions/upload-artifact@v4
       with:
@@ -50,10 +50,17 @@ jobs:
     runs-on: "ubuntu-latest"
     needs: [build-internet-manager, build-server]
     steps:   
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
-      - name: Download All Artifacts
+      - name: Download Server
         uses: actions/download-artifact@v4
+        with:
+          name: server
+
+      - name: Download Gui
+        uses: actions/download-artifact@v4
+        with:
+          name: internet_manager
           
       - name: Release
         uses: softprops/action-gh-release@v2
