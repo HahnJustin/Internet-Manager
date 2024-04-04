@@ -1,4 +1,4 @@
-name: Package with PyInstaller
+name: Build Executables
 
 on:
   pull_request:
