@@ -1,4 +1,4 @@
-name: Build Executables
+name: "Build Executables"
 
 on:
   pull_request:
@@ -6,7 +6,6 @@ on:
 
 jobs:
   build-internet-manager:
-
     runs-on: ubuntu-latest
 
     steps:
@@ -26,7 +25,6 @@ jobs:
         retention-days: 1
 
   build-server:
-
     runs-on: ubuntu-latest
 
     steps:
