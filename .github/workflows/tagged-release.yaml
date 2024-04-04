@@ -7,6 +7,7 @@ on:
 
 jobs:
   build-internet-manager:
+    name: "Build Gui Executable"
     runs-on: ubuntu-latest
 
     steps:
@@ -26,6 +27,7 @@ jobs:
         retention-days: 7
 
   build-server:
+    name: "Build Server Executable"
     runs-on: ubuntu-latest
 
     steps:
@@ -45,7 +47,7 @@ jobs:
         retention-days: 7
 
   tagged-release:
-    name: "Tagged Release"
+    name: "Create Tagged Release"
     runs-on: "ubuntu-latest"
     needs: [build-internet-manager, build-server]
     steps:   
@@ -61,5 +63,5 @@ jobs:
           files: |
             LICENSE.txt
             *.exe
-                        config.yaml
+            config.yaml
             client-config.yaml
