@@ -13,7 +13,7 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Package Application
-      uses: JackMcKew/pyinstaller-action-windows@v0.1.2
+      uses: JackMcKew/pyinstaller-action-windows@main
       with:
         path: src
         spec: internet_manager.spec
@@ -33,7 +33,7 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Package Application
-      uses: JackMcKew/pyinstaller-action-windows@v0.1.2
+      uses: JackMcKew/pyinstaller-action-windows@main
       with:
         path: src
         spec: server.spec
