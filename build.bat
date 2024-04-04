@@ -1,3 +1,3 @@
 start pip install pyinstaller
-start pyinstaller server.spec --clean
-start pyinstaller internet_manager.spec --clean
+start pyinstaller %~dp0\src\server.spec --clean
+start pyinstaller %~dp0\src\internet_manager.spec --clean
