@@ -11,7 +11,7 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
-    noarchive=False,
+    noarchive=False
 )
 pyz = PYZ(a.pure)
 

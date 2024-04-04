@@ -8,10 +8,9 @@ a = Analysis(
     datas=[( 'sfx/*', 'sfx' )],
     hiddenimports=[],
     hookspath=[],
-    hooksconfig={},
     runtime_hooks=[],
     excludes=[],
-    noarchive=False,
+    noarchive=False
 )
 pyz = PYZ(a.pure)
 
