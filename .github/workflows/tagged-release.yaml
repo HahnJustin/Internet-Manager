@@ -22,7 +22,7 @@ jobs:
     - uses: actions/upload-artifact@v2
       with:
         name: internet_manager
-        path: src/dist
+        path: src/dist/windows
         retention-days: 7
 
   build-server:
@@ -41,14 +41,13 @@ jobs:
     - uses: actions/upload-artifact@v2
       with:
         name: server
-        path: src/dist
+        path: src/dist/windows
         retention-days: 7
 
   tagged-release:
     name: "Tagged Release"
     runs-on: "ubuntu-latest"
-    needs: build-internet-manager
-    needs: build-server
+    needs: [build-internet-manager, build-server]
     steps:   
       - uses: actions/checkout@v2
 
@@ -62,3 +61,5 @@ jobs:
           files: |
             LICENSE.txt
             *.exe
+                        config.yaml
+            client-config.yaml
