@@ -17,7 +17,6 @@ jobs:
       with:
         path: src
         spec: internet_manager.spec
-        requirements: "requirements/requirements-gui.txt"
 
     - uses: actions/upload-artifact@v2
       with:
@@ -37,7 +36,6 @@ jobs:
       with:
         path: src
         spec: server.spec
-        requirements: "requirements/requirements-server.txt"
 
     - uses: actions/upload-artifact@v2
       with:
