@@ -14,16 +14,12 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    - name: Install Python Dependencies
-      uses: py-actions/py-dependency-install@v4
-      with:
-          path: "requirements/requirements-gui.txt"
-
     - name: Package Application
-      uses: JackMcKew/pyinstaller-action-windows@main
+      uses: JackMcKew/pyinstaller-action-windows@python3-10-pyinstaller-5-3
       with:
         path: src
         spec: internet_manager.spec
+        requirements: "requirements/requirements-gui.txt"
 
     - uses: actions/upload-artifact@v2
       with:
@@ -37,16 +33,12 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    - name: Install Python Dependencies
-      uses: py-actions/py-dependency-install@v4
-      with:
-          path: "requirements/requirements-server.txt"
-
     - name: Package Application
-      uses: JackMcKew/pyinstaller-action-windows@main
+      uses: JackMcKew/pyinstaller-action-windows@python3-10-pyinstaller-5-3
       with:
         path: src
         spec: server.spec
+        requirements: "requirements/requirements-server.txt"
 
     - uses: actions/upload-artifact@v2
       with:
