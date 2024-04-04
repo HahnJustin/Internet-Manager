@@ -37,7 +37,7 @@ jobs:
       with:
         path: src
         spec: server.spec
-        requirements: requirements/requirements-server.txt
+        requirements: "requirements/requirements-server.txt"
 
     - uses: actions/upload-artifact@v4
       with:
