@@ -2,10 +2,10 @@
 
 
 a = Analysis(
-    ['server.py'],
+    ['src/server.py'],
     pathex=[],
     binaries=[],
-    datas=[( 'sfx/*', 'sfx' )],
+    datas=[( 'src/sfx/*', 'sfx' )],
     hiddenimports=[],
     hookspath=[],
     runtime_hooks=[],
