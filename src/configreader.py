@@ -41,7 +41,8 @@ def get_config() -> dict:
                 yaml_file.write("# All Times must be in military time \n")
                 yaml_file.write("# By Justin Hahn 2024 [https://github.com/HahnJustin] \n \n")
                 yaml.dump(default_cfg, yaml_file)
-                sys.exit()
+
+                raise Exception(f"Server did not have a config, so it made one at {cfg_path}")
         with f:
             cfg = yaml.load(f, Loader=yaml.FullLoader)
 
