@@ -35,7 +35,3 @@ exe = EXE(
     entitlements_file=None,
     icon='assets\globe_server.ico'
 )
-
-import shutil
-
-shutil.copyfile('config.yaml', '{0}/config.yaml'.format(DISTPATH))

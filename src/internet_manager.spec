@@ -35,7 +35,3 @@ exe = EXE(
     entitlements_file=None,
     icon='assets\globe.ico'
 )
-
-import shutil
-
-shutil.copyfile('client-config.yaml', '{0}/client-config.yaml'.format(DISTPATH))
