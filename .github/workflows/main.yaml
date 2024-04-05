@@ -24,7 +24,7 @@ jobs:
     - uses: actions/upload-artifact@v4
       with:
         name: internet_manager
-        path: src/dist/windows
+        path: src/dist
         retention-days: 1
 
   build-server:
@@ -44,5 +44,5 @@ jobs:
     - uses: actions/upload-artifact@v4
       with:
         name: server
-        path: src/dist/windows
+        path: src/dist
         retention-days: 1
