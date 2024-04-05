@@ -206,7 +206,7 @@ tomorrow = now + timedelta(days=1)
 # Reading/Initializing storage json
 json_data = {}
 if os.path.isfile(configreader.get_json_path()):
-   f = open(Paths.JSON_FILE) 
+   f = open(configreader.get_json_path()) 
    json_data = json.load(f)
 else:
    json_data = {StorageKey.VOUCHER:3, StorageKey.SINCE_LAST_RELAPSE: string_now(),

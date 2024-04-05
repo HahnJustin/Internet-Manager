@@ -108,4 +108,4 @@ def str_to_datetime(time : str) -> datetime:
     return datetime.strptime(time, '%m/%d/%y %H:%M:%S')
 
 def get_json_path():
-    return path.abspath(path.join(path.dirname(__file__), Paths.JSON_FILE))
+    return path.abspath(path.join(path.dirname(__file__), Paths.JSON_FILE.value))
