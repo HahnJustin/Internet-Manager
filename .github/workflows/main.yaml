@@ -14,17 +14,15 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - uses: actions/setup-python@v5
+    - name: Package Application
+      uses: JackMcKew/pyinstaller-action-windows@main
       with:
-        python-version: "3.10"
-
-    - run: pip install -r requirements.txt pyinstaller
-    - run: pyinstaller internet_manager.spec
+        spec: internet_manager.spec
 
     - uses: actions/upload-artifact@v4
       with:
         name: internet_manager
-        path: dist/*
+        path: dist/windows
         retention-days: 1
 
   build-server:
@@ -34,15 +32,13 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - uses: actions/setup-python@v5
+    - name: Package Application
+      uses: JackMcKew/pyinstaller-action-windows@main
       with:
-        python-version: "3.10"
-
-    - run: pip install -r requirements.txt pyinstaller
-    - run: pyinstaller server.spec
+        spec: server.spec
 
     - uses: actions/upload-artifact@v4
       with:
         name: server
-        path: dist/*
+        path: dist/windows
         retention-days: 1
