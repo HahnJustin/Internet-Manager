@@ -2,10 +2,10 @@
 
 
 a = Analysis(
-    ['src/server.py'],
+    ['gui.py'],
     pathex=[],
     binaries=[],
-    datas=[( 'src/sfx/*', 'sfx' )],
+    datas=[( 'assets/*', 'assets' )],
     hiddenimports=[],
     hookspath=[],
     runtime_hooks=[],
@@ -20,7 +20,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='server',
+    name='internet_manager.exe',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -33,5 +33,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='assets\globe_server.ico'
+    icon='assets\globe.ico'
 )

@@ -2,7 +2,7 @@ name: "Create Pre-Release"
 
 on:
   push:
-    branches: [ not-main ]
+    branches: [ main ]
 
 jobs:
   build-internet-manager:
@@ -15,8 +15,8 @@ jobs:
     - name: Package Application
       uses: JackMcKew/pyinstaller-action-windows@main
       with:
-        path: src
         spec: internet_manager.spec
+        requirements: requirements.txt
 
     - uses: actions/upload-artifact@v4
       with:
@@ -34,8 +34,8 @@ jobs:
     - name: Package Application
       uses: JackMcKew/pyinstaller-action-windows@main
       with:
-        path: src
         spec: server.spec
+        requirements: requirements.txt
 
     - uses: actions/upload-artifact@v4
       with:
