@@ -2,4 +2,4 @@ customtkinter
 playsound==1.2.2
 PyYAML
 colour
-PIL
+Pillow
