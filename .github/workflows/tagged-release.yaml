@@ -17,7 +17,7 @@ jobs:
       uses: JackMcKew/pyinstaller-action-windows@main
       with:
         spec: internet_manager.spec
-        requirements: requirements.txt
+        requirements: requirements/requirements-gui.txt
 
     - uses: actions/upload-artifact@v4
       with:
@@ -36,7 +36,7 @@ jobs:
       uses: JackMcKew/pyinstaller-action-windows@main
       with:
         spec: server.spec
-        requirements: requirements.txt
+        requirements: requirements/requirements-server.txt
 
     - uses: actions/upload-artifact@v4
       with:

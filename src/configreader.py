@@ -1,12 +1,14 @@
 import yaml
 import os
 import json
+import sys
 from os import path
 from datetime import datetime
 from libuniversal import ConfigKey, StorageKey, Paths
 
 cfg = None
 json_data = {}
+application_path = None
 
 default_cfg = {ConfigKey.HOST.value: str("127.0.0.1"),
             ConfigKey.PORT.value : 65432, 
@@ -19,20 +21,27 @@ default_cfg = {ConfigKey.HOST.value: str("127.0.0.1"),
             ConfigKey.SOUND_ON.value : True,
             ConfigKey.WARNING_MINUTES.value : 15}
 
+def set_application_path(path):
+    global application_path
+    application_path = path
+
 def get_config() -> dict:
     global cfg
+    global application_path
     
+    cfg_path = os.path.join(application_path, Paths.CONFIG_FILE.value)
+
     if cfg is None:
         # Reading config
         try:
-            f = open(Paths.CONFIG_FILE)
+            f = open(cfg_path)
         except OSError:
-            with open(Paths.CONFIG_FILE, 'w') as yaml_file:
+            with open(cfg_path, 'w') as yaml_file:
                 yaml_file.write("# Config Class for Internet Manager's Server Component \n")
                 yaml_file.write("# All Times must be in military time \n")
                 yaml_file.write("# By Justin Hahn 2024 [https://github.com/HahnJustin] \n \n")
                 yaml.dump(default_cfg, yaml_file)
-            f = open(Paths.CONFIG_FILE)
+                sys.exit()
         with f:
             cfg = yaml.load(f, Loader=yaml.FullLoader)
 
