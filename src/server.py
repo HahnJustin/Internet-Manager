@@ -170,6 +170,14 @@ def recalculate_cutoff_time():
     if now > cutoff_time:
         cutoff_time = cutoff_time.replace(year=tomorrow.year, month=tomorrow.month, day=tomorrow.day)
 
+def get_last_relapse() -> datetime:
+    global json_data
+    global cfg
+    global cutoff_time
+
+    last_relapse = datetime.strptime(json_data[StorageKey.SINCE_LAST_RELAPSE], '%m/%d/%y %H:%M:%S')
+    return last_relapse.replace(hour=cutoff_time.hour, minute=cutoff_time.minute)
+
 def cull_vouchers():
     global cutoff_time
     
@@ -200,19 +208,6 @@ configreader.set_application_path(application_path)
 now = datetime.now()
 tomorrow = now + timedelta(days=1)
 
-# Reading/Initializing storage json
-json_data = {}
-if os.path.isfile(configreader.get_json_path()):
-   f = open(configreader.get_json_path()) 
-   json_data = json.load(f)
-else:
-   json_data = {StorageKey.VOUCHER:3, StorageKey.SINCE_LAST_RELAPSE: string_now(),
-                StorageKey.VOUCHER_LIMIT : 5, StorageKey.VOUCHERS_USED : [],
-                StorageKey.MANUAL_USED : False}
-
-# save json
-configreader.force_storage(json_data)
-
 # Reading config
 cfg = configreader.get_config()
 
@@ -224,7 +219,26 @@ if ConfigKey.WARNING_MINUTES in cfg:
 
 # Modifying streak time
 recalculate_cutoff_time()
+
+# Reading/Initializing storage json
+json_data = {}
+if os.path.isfile(configreader.get_json_path()):
+   json_data = configreader.get_storage()
+else:
+   json_data = {StorageKey.VOUCHER:3, StorageKey.SINCE_LAST_RELAPSE: string_now(),
+                StorageKey.VOUCHER_LIMIT : 5, StorageKey.VOUCHERS_USED : [],
+                StorageKey.MANUAL_USED : False}
+
+if StorageKey.SINCE_LAST_RELAPSE in json_data:
+    relapse_time = get_last_relapse()
+    if relapse_time <= cutoff_time:
+        json_data[StorageKey.MANUAL_USED] = False
+
+# Removes references to vouchers already used from storage
 cull_vouchers()
+
+# save json
+configreader.force_storage(json_data)
 
 time_datas = []
 

@@ -5,6 +5,8 @@
 host: "127.0.0.1"
 port: 65432
 
+key: sWXO8LvX0FaQgNAbDckjy32kfBQDPtvODAVLhcc7GgM=
+
 # Time the internet will be cut off
 shutdown_times:
   - "23:00:00"

@@ -27,6 +27,7 @@ class ConfigKey(str, Enum):
     MILITARY_TIME = "military_time"
     SOUND_ON = "sound_on"
     WARNING_MINUTES = "warning_minutes"
+    KEY = "key"
     DEBUG = "debug"
 
 class StorageKey(str, Enum):
@@ -37,7 +38,7 @@ class StorageKey(str, Enum):
     MANUAL_USED = "manual_used"
 
 class Paths(str, Enum):
-    JSON_FILE = "storage.json"
+    JSON_FILE = "storage.txt"
     CONFIG_FILE = "config.yaml"
     CLIENT_CONFIG_FILE = "client-config.yaml"
     ASSETS_FOLDER = "assets"

@@ -1,14 +1,16 @@
 import yaml
 import os
 import json
-import sys
 from os import path
+from cryptography.fernet import Fernet
 from datetime import datetime
 from libuniversal import ConfigKey, StorageKey, Paths
 
 cfg = None
 json_data = {}
 application_path = None
+
+key = Fernet.generate_key()
 
 default_cfg = {ConfigKey.HOST.value: str("127.0.0.1"),
             ConfigKey.PORT.value : 65432, 
@@ -19,7 +21,8 @@ default_cfg = {ConfigKey.HOST.value: str("127.0.0.1"),
             ConfigKey.ETHERNET.value : ["Ethernet", "Ethernet 2"],
             ConfigKey.MILITARY_TIME.value : True,
             ConfigKey.SOUND_ON.value : True,
-            ConfigKey.WARNING_MINUTES.value : 15}
+            ConfigKey.WARNING_MINUTES.value : 15,
+            ConfigKey.KEY.value : key.decode('utf-8')}
 
 def set_application_path(path):
     global application_path
@@ -28,6 +31,7 @@ def set_application_path(path):
 def get_config() -> dict:
     global cfg
     global application_path
+    global key
     
     cfg_path = os.path.join(application_path, Paths.CONFIG_FILE.value)
 
@@ -44,17 +48,24 @@ def get_config() -> dict:
 
                 raise Exception(f"Server did not have a config, so it made one at {cfg_path}")
         with f:
-            cfg = yaml.load(f, Loader=yaml.FullLoader)
+            cfg = yaml.safe_load(f)
+
+    if ConfigKey.KEY in cfg:
+        key = cfg[ConfigKey.KEY]
 
     return cfg
 
 def get_storage() -> dict:
     global json_data
-    
-    # apparently empty dicts evaluate to false
+    global key
+
+    # decrypt storage
     if not json_data and os.path.isfile(get_json_path()):
         f = open(get_json_path()) 
-        json_data = json.load(f)
+        encodedBytes = bytes(f.read(), 'utf-8')
+        fernet = Fernet(key)
+        json_data = json.loads(fernet.decrypt(encodedBytes))
+
     return json_data
 
 def force_storage(forced_json_data):
@@ -62,9 +73,14 @@ def force_storage(forced_json_data):
     json_data = forced_json_data
     save_storage()
 
+# encrypts and saves storage
 def save_storage():
-    with open(get_json_path(), 'w') as f:
-        json.dump(json_data, f)
+    global key
+    fernet = Fernet(key)
+    encrypted = fernet.encrypt(json.dumps(json_data, indent=2).encode('utf-8'))
+
+    with open(get_json_path(), 'wb') as f:
+        f.write(encrypted)
 
 def use_voucher(time):
     json_data[StorageKey.VOUCHER] -= 1
@@ -109,4 +125,4 @@ def str_to_datetime(time : str) -> datetime:
     return datetime.strptime(time, '%m/%d/%y %H:%M:%S')
 
 def get_json_path():
-    return path.abspath(path.join(path.dirname(__file__), Paths.JSON_FILE.value))
+    return os.path.join(application_path, Paths.JSON_FILE.value)

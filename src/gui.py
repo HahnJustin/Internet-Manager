@@ -174,8 +174,7 @@ def create_request(action, value):
     elif( action == Actions.INTERNET_ON or action == Actions.INTERNET_OFF or 
           action == Actions.GRAB_CONFIG or action == Actions.ADMIN_STATUS or
           action == Actions.INTERNET_STATUS or action == Actions.GRAB_STORAGE or
-          action == Actions.RELAPSE or action == Actions.ADD_VOUCHER or
-          action == Actions.MANUAL_OVERRIDE):
+          action == Actions.RELAPSE or action == Actions.ADD_VOUCHER):
         return dict(
             type="text/json",
             encoding="utf-8",
@@ -797,6 +796,10 @@ if ConfigKey.DEBUG in cfg and cfg[ConfigKey.DEBUG]:
     turn_off.pack(side = 'left', anchor='e', expand=False)
     turn_on.pack(side='left', anchor='w', expand=False)
 
+    add_voucher = CTkButton(debug_frame, text = 'Add Voucher',
+                            command = lambda : do_request(Actions.ADD_VOUCHER, ""))  
+    add_voucher.pack(side = 'left', anchor='e', expand=False)
+
     test_gif = CTkButton(debug_frame, text = 'Gif Toggle Off',
                             command = lambda : toggle_globe_animation(False))  
     test_gif.pack(side='right', anchor='w', expand=False)
@@ -810,7 +813,7 @@ if ConfigKey.DEBUG in cfg and cfg[ConfigKey.DEBUG]:
     test_loot_box.pack(side='right', anchor='w', expand=False)
 
 
-extra_bottom_frame = customtkinter.CTkFrame(app)
+extra_bottom_frame = customtkinter.CTkFrame(app, height = 36)
 extra_bottom_frame.pack(side='bottom', fill="x")
 
 manual_icon = customtkinter.CTkLabel(extra_bottom_frame, text="", image=get_image(Paths.ASSETS_FOLDER + "/embarrased_globe.png"))
