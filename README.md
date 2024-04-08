@@ -9,9 +9,9 @@ Audio also can be configured to play to warn the user that a cut-off/shutdown is
 1. Download the server/internet_manager executables from the latest release that is not a pre-release
 2. Running the server/internet_manager will create their respective config files (The server will only create the config then close)
 3. Modify the configs to what you wish
-4. Then open a task scheduling program/method and schedule server.exe to on startup or user log-on ([On Windows I recommend the built-in Windows Task Scheduler](https://www.youtube.com/watch?v=5cOxJDrAXyM))
+4. Then open a task scheduling program/method and schedule server.exe to on user log-on ([On Windows I recommend the built-in Windows Task Scheduler](https://www.youtube.com/watch?v=5cOxJDrAXyM))
 > [!CAUTION]
 > Server must be run using **admin priviledges** and failure to do so will render the program unable to toggle the internet on and off
-5. _Optional_ - You can also schedule the internet_manager.exe to automatically open, but remember this needs to run **after** the server or it won't work
+5. _Optional_ - You can also schedule the internet_manager.exe to automatically open, but remember this needs to run **after** the server or it won't work (Which you can do on the task scheduler, using the delay option)
 6. _Optional_ - Make a shortcut to internet_manager.exe or run it once and pin it on your hotbar
 You're done! Now it should automatically run in the background everytime you use your computer
