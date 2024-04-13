@@ -674,7 +674,7 @@ customtkinter.set_appearance_mode("System")
 customtkinter.set_default_color_theme("blue")
 
 # Our app frame
-app = customtkinter.CTk()
+app = customtkinter.CTk(fg_color='#25292e')
 app.geometry("720x480")
 app.minsize(600, 350)
 app.title("Internet Manager")
@@ -732,7 +732,7 @@ sort_labels()
 
 # Adding Time
 date_label = customtkinter.CTkLabel(top_frame, text_color="#666e7a", text="Date", font=("Arial", 20), pady=0)
-time_label = customtkinter.CTkLabel(top_frame, text=string_now(), font=("old english text mt", 40), padx=10)
+time_label = customtkinter.CTkLabel(top_frame, text=string_now(), font=("old english text mt", 40), padx=10, text_color="white")
 
 date_label.pack(side='top')
 time_label.pack(side='top')
@@ -813,7 +813,7 @@ if ConfigKey.DEBUG in cfg and cfg[ConfigKey.DEBUG]:
     test_loot_box.pack(side='right', anchor='w', expand=False)
 
 
-extra_bottom_frame = customtkinter.CTkFrame(app, height = 36)
+extra_bottom_frame = customtkinter.CTkFrame(app, height = 36, fg_color='#25292e', corner_radius=0)
 extra_bottom_frame.pack(side='bottom', fill="x")
 
 manual_icon = customtkinter.CTkLabel(extra_bottom_frame, text="", image=get_image(Paths.ASSETS_FOLDER + "/embarrased_globe.png"))
@@ -845,18 +845,18 @@ streak = clamp(math.floor((now - last_relapse).total_seconds() / 86400),0,999999
 
 streak_icon = customtkinter.CTkLabel(bottom_frame, text="")
 streak_icon.pack(side='left', anchor='e', expand=True)
-streak_label = customtkinter.CTkLabel(bottom_frame, text=f"Streak: {streak}" )
+streak_label = customtkinter.CTkLabel(bottom_frame, text=f"Streak: {streak}", text_color="white" )
 streak_label.pack(side='right', anchor='w', expand=True)
 update_streak_graphics()
 
 voucher_label = customtkinter.CTkLabel(bottom_right_frame, text=f"x{local_vouchers}", 
                                         image=get_image(Paths.ASSETS_FOLDER + "/tiny_voucher.png"),
-                                        compound='left', anchor='e', padx = 5)
+                                        compound='left', anchor='e', padx = 5, text_color="white")
 voucher_label.pack(side='right', anchor='e', expand=True)
 
 red_voucher_label = customtkinter.CTkLabel(bottom_left_frame, text=f"x{voucher_limit}", 
                                         image=get_image(Paths.ASSETS_FOLDER + "/tiny_red_voucher.png"),
-                                        compound='left', anchor='e', padx = 5)
+                                        compound='left', anchor='e', padx = 5, text_color="white")
 red_voucher_label.pack(side='right', anchor='e', expand=True)
 
 
