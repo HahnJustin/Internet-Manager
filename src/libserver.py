@@ -127,6 +127,10 @@ class Message:
         elif action == Actions.ADD_VOUCHER:
             configreader.add_voucher()
             content = {MessageKey.RESULT: "added voucher"}
+        elif action == Actions.KILL_SERVER:
+            self.selector.close()
+            sys.exit()
+            content = {MessageKey.RESULT: "killed server"}
         else:
             content = {MessageKey.RESULT: f"Error: invalid action '{action}'."}
         content_encoding = "utf-8"

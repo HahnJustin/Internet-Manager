@@ -8,6 +8,7 @@
 #define MyAppExeName "internet_manager.exe"
 #define MyAppCreateTasks "create_tasks.exe"
 #define MyAppRemoveTasks "remove_tasks.exe"
+#define MyAppKillServer "kill_server.exe"
 #define MyAppServerExeName "internet_manager_server.exe"
 
 [Setup]
@@ -27,6 +28,8 @@ Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
+UninstallDisplayName=Uninstall
+CloseApplications=force
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -39,6 +42,7 @@ Source: "dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\{#MyAppCreateTasks}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\{#MyAppServerExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\{#MyAppRemoveTasks}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\{#MyAppKillServer}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "src\client-config.yaml"; DestDir: "{app}"; Flags: ignoreversion
 Source: "src\config.yaml"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
@@ -56,4 +60,33 @@ Filename: "cmd"; Parameters: "/C timeout /T 15 /NOBREAK"; Flags: runhidden
 Filename: "{app}\{#MyAppExeName}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
-Filename: "{app}\{#MyAppRemoveTasks}"; Flags: runhidden
+Filename: "{app}\{#MyAppKillServer}"; Flags: runhidden; RunOnceId: "KillServerTask"
+Filename: "{app}\{#MyAppRemoveTasks}"; Flags: runhidden; RunOnceId: "RemoveTasks"
+
+[Code]
+function IsUpgradeInstall(): Boolean;
+var
+  InstallDir: string;
+begin
+  Result := False;
+  if RegQueryStringValue(HKLM, 'Software\MyCompany\Internet Manager', 'InstallPath', InstallDir) then
+  begin
+    if DirExists(InstallDir) then
+    begin
+      Result := True;
+    end;
+  end;
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ResultCode: Integer;
+begin
+  if CurStep = ssInstall then
+  begin
+    if IsUpgradeInstall() then
+    begin
+      Exec(ExpandConstant('{app}\{#MyAppKillServer}'), '', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    end;
+  end;
+end;

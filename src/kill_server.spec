@@ -1,11 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 a = Analysis(
-    ['server.py'],
+    ['kill_server.py'],
     pathex=[],
     binaries=[],
-    datas=[( 'sfx/*', 'sfx' )],
-    hiddenimports=['pyuac'],
+    datas=[],
+    hiddenimports=[],
     hookspath=[],
     runtime_hooks=[],
     excludes=[],
@@ -19,7 +19,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='internet_manager_server',
+    name='kill_server.exe',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -32,5 +32,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='assets\globe_server.ico'
+    icon='assets/skull.ico'
 )

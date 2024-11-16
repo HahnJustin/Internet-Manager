@@ -12,6 +12,7 @@ class Actions(str, Enum):
     UNUSED_VOUCHER = "unused_voucher"
     RELAPSE = "relapse"
     ADD_VOUCHER = "add_voucher"
+    KILL_SERVER = "kill_server"
 
 class MessageKey(str, Enum):
     RESULT = "result"

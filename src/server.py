@@ -10,6 +10,7 @@ import selectors
 import libserver
 import internet_management
 import configreader
+import pyuac
 from playsound import playsound
 from libuniversal import Actions, ConfigKey, StorageKey, Paths
 from datetime import datetime, timedelta
@@ -196,6 +197,11 @@ def play_sfx(sfx : str):
             playsound(resource_path(Paths.SFX_FOLDER + '\\' + sfx))
         except:
             playsound(resource_path(Paths.SFX_FOLDER + '\\' + sfx))
+
+if not pyuac.isUserAdmin():
+        print("Re-launching as admin!")
+        pyuac.runAsAdmin()
+        sys.exit()
 
 # Getting Application Path - Thanks Max Tet
 if getattr(sys, 'frozen', False):

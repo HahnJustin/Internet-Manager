@@ -174,7 +174,8 @@ def create_request(action, value):
     elif( action == Actions.INTERNET_ON or action == Actions.INTERNET_OFF or 
           action == Actions.GRAB_CONFIG or action == Actions.ADMIN_STATUS or
           action == Actions.INTERNET_STATUS or action == Actions.GRAB_STORAGE or
-          action == Actions.RELAPSE or action == Actions.ADD_VOUCHER):
+          action == Actions.RELAPSE or action == Actions.ADD_VOUCHER or 
+          action == Actions.KILL_SERVER):
         return dict(
             type="text/json",
             encoding="utf-8",
