@@ -39,6 +39,44 @@ jobs:
 
     - uses: actions/upload-artifact@v4
       with:
-        name: server
+        name: internet_manager_server
+        path: src/dist/windows
+        retention-days: 1
+
+  build-create-tasks:
+    name: "Build Create Tasks Executable"
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Package Application
+      uses: JackMcKew/pyinstaller-action-windows@main
+      with:
+        spec: create_tasks.spec
+        requirements: requirements/requirements-tasks.txt
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: create_tasks
+        path: src/dist/windows
+        retention-days: 1
+
+  build-remove-tasks:
+    name: "Build Remove Tasks Executable"
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Package Application
+      uses: JackMcKew/pyinstaller-action-windows@main
+      with:
+        spec: remove_tasks.spec
+        requirements: requirements/requirements-tasks.txt
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: remove_tasks
         path: src/dist/windows
         retention-days: 1

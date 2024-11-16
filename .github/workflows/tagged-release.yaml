@@ -21,7 +21,7 @@ jobs:
 
     - uses: actions/upload-artifact@v4
       with:
-        name: internet_manager
+        name: internet_manager_gui
         path: src/dist/windows
         retention-days: 7
 
@@ -40,27 +40,75 @@ jobs:
 
     - uses: actions/upload-artifact@v4
       with:
-        name: server
+        name: internet_manager_server
+        path: src/dist/windows
+        retention-days: 7
+
+  build-create-tasks:
+    name: "Build Create Tasks Executable"
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Package Application
+      uses: JackMcKew/pyinstaller-action-windows@main
+      with:
+        spec: create_tasks.spec
+        requirements: requirements/requirements-tasks.txt
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: create_tasks
+        path: src/dist/windows
+        retention-days: 7
+
+  build-remove-tasks:
+    name: "Build Remove Tasks Executable"
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Package Application
+      uses: JackMcKew/pyinstaller-action-windows@main
+      with:
+        spec: remove_tasks.spec
+        requirements: requirements/requirements-tasks.txt
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: remove_tasks
         path: src/dist/windows
         retention-days: 7
 
   tagged-release:
     name: "Create Tagged Release"
     runs-on: "ubuntu-latest"
-    needs: [build-internet-manager, build-server]
+    needs: [build-internet-manager, build-server, build-create-tasks, build-remove-tasks]
     steps:   
       - uses: actions/checkout@v2
 
       - name: Download Server
         uses: actions/download-artifact@v4
         with:
-          name: server
+          name: internet_manager_server
 
       - name: Download Gui
         uses: actions/download-artifact@v4
         with:
           name: internet_manager
           
+      - name: Download Create Tasks Exe
+        uses: actions/download-artifact@v4
+        with:
+          name: create_tasks
+
+      - name: Download Remove Tasks Exe
+        uses: actions/download-artifact@v4
+        with:
+          name: remove_tasks
+
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
