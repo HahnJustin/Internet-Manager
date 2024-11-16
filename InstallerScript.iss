@@ -43,8 +43,8 @@ Source: "dist\{#MyAppCreateTasks}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\{#MyAppServerExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\{#MyAppRemoveTasks}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\{#MyAppKillServer}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "src\client-config.yaml"; DestDir: "{app}"; Flags: ignoreversion
-Source: "src\config.yaml"; DestDir: "{app}"; Flags: ignoreversion
+Source: "src\client-config.yaml"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist
+Source: "src\config.yaml"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "attribution.txt"; DestDir: "{app}"; Flags: ignoreversion
