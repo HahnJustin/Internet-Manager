@@ -13,11 +13,14 @@ import time, traceback
 import math
 import ctypes
 import random
+import webbrowser
 from libuniversal import Actions, ConfigKey, StorageKey, Paths
 from customtkinter import CTkButton
 from colour import Color
 from datetime import datetime, timedelta
 from PIL import Image
+
+SOFTWARE_VERSION = "v1.1"
 
 COLOR_AMOUNT = 100
 SHUTDOWN_COLORS = [(224, 0, 0), (69, 75, 92),(0, 0, 255),(0, 0, 0)]
@@ -125,6 +128,9 @@ class time_action_data():
             delta_scaled = int(delta.total_seconds() ** 1.4) / int(60 * 60)
             color_index = clamp(int(delta_scaled * (COLOR_AMOUNT / 100)), 0, COLOR_AMOUNT-1)
         return Color('#%02x%02x%02x' % tuple(map(round, self.color_list[color_index])))
+
+    def get_fg_color(self) -> Color:
+        return self.button.cget("fg_color")
 
     def __str__(self) -> str:
         return datetime.strftime(self.datetime, '%m/%d/%y %H:%M:%S')
@@ -373,12 +379,34 @@ def sort_labels():
 
 def get_streak_icon(streak : int) -> customtkinter.CTkImage:
     path = ""
-    if streak >= 60:
-        path = Paths.ASSETS_FOLDER + "/streak3.png"
-    elif streak >= 30:
-        path = Paths.ASSETS_FOLDER + "/streak2.png"
-    else:
+    if streak < 15:
         path = Paths.ASSETS_FOLDER + "/streak.png"
+    elif streak < 30:
+        path = Paths.ASSETS_FOLDER + "/streak1half.png"
+    elif streak < 45:
+        path = Paths.ASSETS_FOLDER + "/streak2.png"
+    elif streak < 60:
+        path = Paths.ASSETS_FOLDER + "/streak3.png"
+    elif streak < 120:
+        path = Paths.ASSETS_FOLDER + "/streak_mid.png"
+    elif streak < 180:
+        path = Paths.ASSETS_FOLDER + "/streak_mid1half.png"
+    elif streak < 240:
+        path = Paths.ASSETS_FOLDER + "/streak_mid2.png"
+    elif streak < 300:
+        path = Paths.ASSETS_FOLDER + "/streak_mid3.png"
+    elif streak < 365:
+        path = Paths.ASSETS_FOLDER + "/streak_mid4.png"
+    elif streak < 548:
+        path = Paths.ASSETS_FOLDER + "/streak_big.png"
+    elif streak < 730:
+        path = Paths.ASSETS_FOLDER + "/streak_big1half.png"
+    elif streak < 913:
+        path = Paths.ASSETS_FOLDER + "/streak_big2.png"
+    elif streak < 1095:
+        path = Paths.ASSETS_FOLDER + "/streak_big3.png"
+    else:
+        path = Paths.ASSETS_FOLDER + "/streak_big4.png"
     return get_image(path)
 
 def get_button_icon(label_data : time_action_data) -> customtkinter.CTkImage:
@@ -490,6 +518,10 @@ def _next_frame(frame : customtkinter.CTkImage, label, frames, restart=False):
 def manual_override():
     top= customtkinter.CTkToplevel(app)
    
+    icon_path = resource_path(Paths.ASSETS_FOLDER + "/sad_emoji.ico")
+    top.wm_iconbitmap()
+    top.after(201, lambda :top.iconbitmap(icon_path))
+
     x = app.winfo_rootx()
     y = app.winfo_rooty()
     height = app.winfo_height()
@@ -615,6 +647,58 @@ def toggle_globe_animation(enabled : bool):
         app.after(1, _play_gif_once, right_globe_gif, globe_disable_right_frames)
     globe_on = enabled
 
+def open_url(url):
+    webbrowser.open_new(url)
+
+def help_dialogue():
+    top = customtkinter.CTkToplevel(app)
+    
+    # Center the popup on the main window
+    x = app.winfo_rootx()
+    y = app.winfo_rooty()
+    height = app.winfo_height()
+    width = app.winfo_width()
+    top.geometry("+%d+%d" % (x - 125 + width / 2, y - 50 + height / 2))
+    top.minsize(400, 250)
+    top.maxsize(400, 250)
+    top.attributes('-topmost', True)
+    top.title("Info")
+
+    info_title_label = customtkinter.CTkLabel(top, text= f"Info", font=('old english text mt', 32), pady=10)
+    info_title_label.pack(side='top')
+
+    info_string = f"Internet Manager {SOFTWARE_VERSION}"
+
+    software_v_label = customtkinter.CTkLabel(top, anchor='w', text= info_string, font=('arial', 18), pady=2.5)
+    software_v_label.pack(side='top')
+
+    desc_string = f"Made by Dalichrome '24"
+
+    desc_label = customtkinter.CTkLabel(top, anchor='w', text= desc_string, font=('arial', 16), pady=2.5)
+    desc_label.pack(side='top')
+
+    label = customtkinter.CTkLabel(top, anchor='w', text= f"Links", font=('old english text mt', 22), pady=10)
+    label.pack(side='top')
+
+    link = customtkinter.CTkLabel(top, anchor='w', text="Check out my other projects!", font=('arial', 16), pady=5, text_color="#366cbc", cursor="hand2")
+    link.pack()
+    link.bind("<Button-1>", lambda e: open_url("https://www.dalichro.me/projects"))
+    
+    # Set the icon twice to ensure it persists
+    icon_path = resource_path(Paths.ASSETS_FOLDER + "/info_icon.ico")
+    top.wm_iconbitmap()
+    top.update_idletasks()     # Force any pending updates
+    top.after(201, lambda :top.iconbitmap(icon_path))
+
+    # Add widgets and focus
+    top.focus_set()
+    top.grab_set()
+
+    def on_close():
+        top.grab_release()
+        top.destroy()
+
+    top.protocol("WM_DELETE_WINDOW", on_close)
 
 # no clue why this works, but it allows the taskbar icon to be custom
 myappid = 'mycompany.myproduct.subproduct.version' # arbitrary string
@@ -677,13 +761,18 @@ customtkinter.set_default_color_theme("blue")
 # Our app frame
 app = customtkinter.CTk(fg_color='#25292e')
 app.geometry("720x480")
-app.minsize(600, 350)
+app.minsize(600, 375)
 app.title("Internet Manager")
 app_bg_color = app.cget('bg')
+widget_bg_color = '#404654'
 
 # Shutdown label parent
-widget_frame = customtkinter.CTkFrame(app, fg_color='#404654', corner_radius=0)
+widget_frame = customtkinter.CTkFrame(app, fg_color=widget_bg_color, corner_radius=0)
 widget_frame.pack(side='left', fill="y")
+
+# Help label
+help_frame = customtkinter.CTkFrame(widget_frame, fg_color=widget_bg_color, corner_radius=0)
+help_frame.pack(side='top', fill="x")
 
 # Top label parent
 top_frame = customtkinter.CTkFrame(app, fg_color='#2d3542', corner_radius=0)
@@ -859,6 +948,18 @@ red_voucher_label = customtkinter.CTkLabel(bottom_left_frame, text=f"x{voucher_l
                                         image=get_image(Paths.ASSETS_FOLDER + "/tiny_red_voucher.png"),
                                         compound='left', anchor='e', padx = 5, text_color="white")
 red_voucher_label.pack(side='right', anchor='e', expand=True)
+
+help_icon = CTkButton(help_frame,
+                        hover_color=app_bg_color,
+                        text="",
+                        command= help_dialogue,
+                        fg_color= widget_bg_color,
+                        image=get_image(Paths.ASSETS_FOLDER + "/info_icon.png"),
+                        anchor='w', 
+                        corner_radius=0,
+                        width=2,
+                        hover= True)
+help_icon.pack(anchor='w', expand=True)
 
 
 # Run time update

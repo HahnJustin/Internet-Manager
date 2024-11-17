@@ -2,7 +2,7 @@
 
 #define MyAppName "Internet Manager"
 #define MyAppNameNoSpace "Internet_Manager"
-#define MyAppVersion "1.0.4"
+#define MyAppVersion "1.1.0"
 #define MyAppPublisher "Dalichrome"
 #define MyAppURL "https://dalichro.me/project/internet-manager/"
 #define MyAppExeName "internet_manager.exe"
