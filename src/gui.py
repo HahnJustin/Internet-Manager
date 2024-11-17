@@ -80,7 +80,7 @@ class time_action_data():
             if not button.vouched and type(button) != internet_up_data:
                 can_vouch = False
                 break
-
+        
         if not self.vouched and local_vouchers > 0 and internet_on and can_vouch:
             self.make_vouched()
             local_vouchers -= 1
@@ -93,6 +93,9 @@ class time_action_data():
                     local_vouchers += 1
                     do_request(Actions.UNUSED_VOUCHER, str(button))
         update_voucher_label()
+
+        if index == 0:
+            update_help_colors(self)
 
     def make_vouched(self):
         date_time = self.datetime.strftime(time_format)
@@ -131,6 +134,9 @@ class time_action_data():
 
     def get_fg_color(self) -> Color:
         return self.button.cget("fg_color")
+
+    def get_hv_color(self) -> Color:
+        return self.button.cget("hover_color")
 
     def __str__(self) -> str:
         return datetime.strftime(self.datetime, '%m/%d/%y %H:%M:%S')
@@ -302,6 +308,9 @@ def update_button_color():
     for data in time_action_buttons:
         if not data.vouched:
             data.update_color()
+
+    if len(time_action_buttons) > 0:
+        update_help_colors(time_action_buttons[0])
 
 def recalculate_time(data: time_action_data):
    global tomorrow
@@ -699,6 +708,12 @@ def help_dialogue():
         top.destroy()
 
     top.protocol("WM_DELETE_WINDOW", on_close)
+
+def update_help_colors(data : time_action_data):
+    fg_color = data.get_fg_color()
+    hv_color = data.get_hv_color()
+    help_frame.configure(fg_color= fg_color)
+    help_icon.configure(fg_color= fg_color, hover_color= hv_color)
 
 # no clue why this works, but it allows the taskbar icon to be custom
 myappid = 'mycompany.myproduct.subproduct.version' # arbitrary string
