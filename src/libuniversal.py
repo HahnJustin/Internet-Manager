@@ -13,9 +13,17 @@ class Actions(str, Enum):
     RELAPSE = "relapse"
     ADD_VOUCHER = "add_voucher"
     KILL_SERVER = "kill_server"
+    LOOT_CHECK = "loot_check"
+    LOOT_OPEN = "loot_open"
+    NEW_LOOT = "new_loot"
+    GET_LOOT = "get_loot"
 
 class MessageKey(str, Enum):
     RESULT = "result"
+    NORMAL_LOOT_BOX = "loot_box"
+    SHUTDOWN_LOOT_BOX = "shutdown_loot_box"
+    ALL_LOOT_BOXES = "all_loot_boxes"
+    NO_LOOT_BOX = "no_box"
 
 class ConfigKey(str, Enum):
     STREAK_SHIFT = "streak_shift"
@@ -33,10 +41,14 @@ class ConfigKey(str, Enum):
 
 class StorageKey(str, Enum):
     SINCE_LAST_RELAPSE = "last_relapse"
+    LAST_TIME_ACTIVE = "last_active"
     VOUCHER = "voucher"
     VOUCHERS_USED = "vouchers_used"
     VOUCHER_LIMIT = "voucher_limit"
     MANUAL_USED = "manual_used"
+    LOOT_BOXES = "loot_boxes"
+    SHUTDOWN_LOOT_BOXES = "shutdown_loot_boxes"
+    LOOT_BOX_LIMIT = "loot_box_limit"
 
 class Paths(str, Enum):
     JSON_FILE = "storage.txt"

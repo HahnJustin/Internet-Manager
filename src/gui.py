@@ -12,9 +12,9 @@ import os.path
 import time, traceback
 import math
 import ctypes
-import random
 import webbrowser
-from libuniversal import Actions, ConfigKey, StorageKey, Paths
+import random
+from libuniversal import Actions, ConfigKey, StorageKey, Paths, MessageKey
 from customtkinter import CTkButton
 from colour import Color
 from datetime import datetime, timedelta
@@ -33,11 +33,12 @@ NORMAL_TIME = "%#I:%M:%S %p"
 time_format = MILITARY_TIME
 
 VOUCHED_COLOR = '#1f61a3'
+FULL_COLOR = '#2d74bc'
 
-LOOT_BOX_ODDS = 80
-VOUCHER_ODDS = 60
+SECONDARY_COLOR = '#2d3542'
 
 internet_on = True
+loot_box_openable = True
 globe_on = True
 
 admin_on = True
@@ -47,6 +48,8 @@ used_voucher_today = False
 used_manual_override = False
 local_vouchers = 0
 status_timer = None
+lootbox_timer = None
+current_lootbox = None
 
 global now
 global colors
@@ -177,7 +180,8 @@ def every(delay, task):
         next_time += (time.time() - next_time) // delay * delay + delay
 
 def create_request(action, value):
-    if action == Actions.SEARCH or Actions.USED_VOUCHER or Actions.UNUSED_VOUCHER:
+    if( action == Actions.SEARCH or Actions.USED_VOUCHER or Actions.UNUSED_VOUCHER or
+        action == Actions.LOOT_OPEN or action == Actions.LOOT_CHECK):
         return dict(
             type="text/json",
             encoding="utf-8",
@@ -293,8 +297,7 @@ def update_gui():
             toggle_relapse_button(True)
             toggle_globe_animation(False)
             internet_on = False
-            if random.randint(0,99) < LOOT_BOX_ODDS and not used_voucher_today and not used_manual_override:
-                toggle_loot_box(True)
+            run_function_in_five_secs(lambda : check_new_loot())
         elif type(data) == internet_up_data:
             set_icon(True)
             show_status("Internet Reboot Triggered", True)
@@ -303,6 +306,7 @@ def update_gui():
             internet_on = True
         recalculate_time(data)
         sort_labels()
+        update_button_color()
 
 def update_button_color():
     for data in time_action_buttons:
@@ -333,7 +337,7 @@ def recalculate_streak():
     global now
     global last_relapse
 
-    streak = clamp(math.floor((now - last_relapse).total_seconds() / 86400),0,999999)
+    streak = clamp(math.floor((now - last_relapse).total_seconds() / 86400), 0, 999999)
     update_streak_graphics()
 
 def get_datetime():
@@ -357,6 +361,11 @@ def show_status(status : str, positive : bool):
 
 def run_function_in_minute(func) -> threading.Timer:
     thread = threading.Timer(60.0, func) # 60 seconds = 1 minute
+    thread.daemon = True
+    thread.start()
+
+def run_function_in_five_secs(func) -> threading.Timer:
+    thread = threading.Timer(5.0, func) # 60 seconds = 1 minute
     thread.daemon = True
     thread.start()
 
@@ -447,6 +456,20 @@ def update_streak_graphics():
 
 def update_voucher_label():
     voucher_label.configure(text=f"x{local_vouchers}")
+
+    if local_vouchers >= voucher_limit:
+        voucher_label.configure(text_color=FULL_COLOR)
+    else:
+        voucher_label.configure(text_color="#ffffff")
+
+def update_loot_button():
+    global loot_button
+    loot_button.configure(text=f"x{local_loot_boxes}")
+
+    if local_loot_boxes >= loot_limit:
+        loot_button.configure(text_color=FULL_COLOR)
+    else:
+        loot_button.configure(text_color="#ffffff")
 
 def time_action_button_create(time : str, label_type : ConfigKey) -> time_action_data:
     global tomorrow
@@ -598,20 +621,56 @@ def toggle_relapse_button(on : bool):
     else:
         relapse_button.pack_forget()
 
-def toggle_loot_box(on : bool):
-    if on:
-        internet_box_button.configure(text = 'You found an internet box!', state="enabled",
-                        image=get_image(Paths.ASSETS_FOLDER + "/internet_box.png")) 
+def toggle_loot_box(on : bool, new_loot_amount = 0):
+    global loot_box_openable
+    global local_loot_boxes
+    global current_lootbox
+    global lootbox_timer
+    
+    #Box is already screen condition
+    if not loot_box_openable:
+        local_loot_boxes += 1
+        update_loot_button()
+
+    if on and (loot_box_openable or new_loot_amount > 0) and local_loot_boxes > 0:
+
+        current_lootbox = do_request(Actions.GET_LOOT, "")
+        if current_lootbox == MessageKey.NO_LOOT_BOX: return
+
+        idle_text = "You pulled a box out of storage"
+        if new_loot_amount > 1 : idle_text = f'You found {new_loot_amount} internet boxes!'
+        elif new_loot_amount > 0 : idle_text = 'You found an internet box!'
+
+        if current_lootbox == MessageKey.NORMAL_LOOT_BOX:
+            internet_box_button.configure(image=get_image(Paths.ASSETS_FOLDER + "/internet_box.png")) 
+        elif current_lootbox == MessageKey.SHUTDOWN_LOOT_BOX:
+            internet_box_button.configure(image=get_image(Paths.ASSETS_FOLDER + "/shutdown_internet_box.png")) 
+
+        internet_box_button.configure(text = idle_text, state="enabled")
         internet_box_button.pack(fill="both", expand=True, padx=20, pady=20)
         internet_box_button.bind("<Enter>", lambda e: internet_box_button.configure(text="Click to open!"))
-        internet_box_button.bind("<Leave>", lambda e: internet_box_button.configure(text='You found an internet box!'))
-    else:
+        internet_box_button.bind("<Leave>", lambda e: internet_box_button.configure(text=idle_text))
+        local_loot_boxes = local_loot_boxes - 1
+        loot_box_openable = False
+        update_loot_button()
+
+        if lootbox_timer != None: lootbox_timer.cancel()
+        lootbox_timer = run_function_in_minute(lambda : toggle_loot_box(False))
+    elif not on:
         internet_box_button.pack_forget()
+        loot_box_openable = True
 
 def loot_box():
+    global current_lootbox
+
     internet_box_button.unbind("<Enter>")
     internet_box_button.unbind("<Leave>")
-    internet_box_button.configure(text='You opened the box...', state="disabled", image=get_image(Paths.ASSETS_FOLDER + "\internet_box_open.png"))
+    internet_box_button.configure(text='You opened the box...', state="disabled")
+
+    if current_lootbox == MessageKey.NORMAL_LOOT_BOX:
+            internet_box_button.configure(image=get_image(Paths.ASSETS_FOLDER + "/internet_box_open.png")) 
+    elif current_lootbox == MessageKey.SHUTDOWN_LOOT_BOX:
+            internet_box_button.configure(image=get_image(Paths.ASSETS_FOLDER + "/shutdown_internet_box_open.png")) 
 
     thread = threading.Timer(random.randint(2, 10), get_loot)
     thread.daemon = True
@@ -619,10 +678,15 @@ def loot_box():
 
 def get_loot():
     global local_vouchers
-    result = random.randint(0,99)
-    if result > VOUCHER_ODDS:
+    global loot_box_openable
+    global lootbox_timer
+    global current_lootbox
+
+    voucher_amount = do_request(Actions.LOOT_OPEN, current_lootbox)
+
+    if voucher_amount <= 0:
         internet_box_button.configure(text='There was nothing inside :(')
-    elif local_vouchers < voucher_limit:
+    elif local_vouchers + voucher_amount < voucher_limit:
         internet_box_button.configure(text='You found a voucher!!!', image=get_image(Paths.ASSETS_FOLDER + "\\voucher.png"))
         local_vouchers += 1
         update_voucher_label()
@@ -630,8 +694,20 @@ def get_loot():
     else:
         internet_box_button.configure(text="You found a voucher, but don't have room... ", image=get_image(Paths.ASSETS_FOLDER + "\\voucher.png"))
     
-    run_function_in_minute(lambda : toggle_loot_box(False))
+    current_lootbox = MessageKey.NO_LOOT_BOX
+    loot_box_openable = True
+    if lootbox_timer != None: lootbox_timer.cancel()
+    lootbox_timer = run_function_in_minute(lambda : toggle_loot_box(False))
+
+def check_new_loot():
+    global lootbox_timer
+
+    new_loot_amount = do_request(Actions.NEW_LOOT, "")
+    has_new_loot = new_loot_amount > 0 and local_loot_boxes > 0
     
+    if has_new_loot: 
+        toggle_loot_box(True, new_loot_amount)
+
 def toggle_globe_animation(enabled : bool):
     global globe_frames
     global stop_gifs
@@ -745,6 +821,17 @@ if cfg is None or json_data is None:
 local_vouchers = json_data[StorageKey.VOUCHER]
 voucher_limit = json_data[StorageKey.VOUCHER_LIMIT]
 
+# Defining local loot boxes
+local_loot_boxes = 0
+if StorageKey.LOOT_BOXES in json_data:
+    local_loot_boxes += json_data[StorageKey.LOOT_BOXES]
+if StorageKey.SHUTDOWN_LOOT_BOXES in json_data:
+    local_loot_boxes += json_data[StorageKey.SHUTDOWN_LOOT_BOXES]
+
+loot_limit = 5
+if StorageKey.LOOT_BOX_LIMIT in json_data:
+    loot_limit = json_data[StorageKey.LOOT_BOX_LIMIT]
+
 # Defining basic time variables
 now = datetime.now()
 tomorrow = now + timedelta(days=1)
@@ -790,28 +877,28 @@ help_frame = customtkinter.CTkFrame(widget_frame, fg_color=widget_bg_color, corn
 help_frame.pack(side='top', fill="x")
 
 # Top label parent
-top_frame = customtkinter.CTkFrame(app, fg_color='#2d3542', corner_radius=0)
+top_frame = customtkinter.CTkFrame(app, fg_color=SECONDARY_COLOR, corner_radius=0)
 top_frame.pack(side='top', fill="x")
 top_frame_fg_color = top_frame.cget('fg_color')
 
 # Top left
-top_left_frame = customtkinter.CTkFrame(top_frame, fg_color='#2d3542', corner_radius=0)
+top_left_frame = customtkinter.CTkFrame(top_frame, fg_color=SECONDARY_COLOR, corner_radius=0)
 top_left_frame.pack(side='left', fill='both', expand= True)
 
 # Top right 
-top_right_frame = customtkinter.CTkFrame(top_frame, fg_color='#2d3542', corner_radius=0)
+top_right_frame = customtkinter.CTkFrame(top_frame, fg_color=SECONDARY_COLOR, corner_radius=0)
 top_right_frame.pack(side='right', fill='both', expand= True)
 
 # Bottom Frame
-bottom_frame = customtkinter.CTkFrame(app, corner_radius=0, fg_color='#2d3542')
+bottom_frame = customtkinter.CTkFrame(app, corner_radius=0, fg_color=SECONDARY_COLOR)
 bottom_frame.pack(side='bottom', fill="x")
 
 # Bottom right 
-bottom_right_frame = customtkinter.CTkFrame(bottom_frame, corner_radius=0, fg_color='#2d3542')
+bottom_right_frame = customtkinter.CTkFrame(bottom_frame, corner_radius=0, fg_color=SECONDARY_COLOR)
 bottom_right_frame.pack(side='right')
 
 # Bottom left 
-bottom_left_frame = customtkinter.CTkFrame(bottom_frame, corner_radius=0, fg_color='#2d3542')
+bottom_left_frame = customtkinter.CTkFrame(bottom_frame, corner_radius=0, fg_color=SECONDARY_COLOR)
 bottom_left_frame.pack(side='left')
 
 # Making shutdown label color gradient
@@ -934,18 +1021,6 @@ relapse_button = CTkButton(extra_bottom_frame, text = 'Override Turn On Internet
                         fg_color="#b51b20")
 toggle_relapse_button(not internet_on)
 
-internet_box_button = CTkButton(app, text = 'You found an internet box!',
-                        hover_color='#1b1d21',
-                        fg_color= app_bg_color,
-                        image=get_image(Paths.ASSETS_FOLDER + "/internet_box.png"),
-                        compound="top",
-                        anchor='center', 
-                        corner_radius=0, 
-                        hover= True,
-                        command= loot_box,
-                        text_color_disabled="white")
-toggle_loot_box(False)
-
 streak = clamp(math.floor((now - last_relapse).total_seconds() / 86400),0,999999)
 
 streak_icon = customtkinter.CTkLabel(bottom_frame, text="")
@@ -958,11 +1033,29 @@ voucher_label = customtkinter.CTkLabel(bottom_right_frame, text=f"x{local_vouche
                                         image=get_image(Paths.ASSETS_FOLDER + "/tiny_voucher.png"),
                                         compound='left', anchor='e', padx = 5, text_color="white")
 voucher_label.pack(side='right', anchor='e', expand=True)
+update_voucher_label()
 
-red_voucher_label = customtkinter.CTkLabel(bottom_left_frame, text=f"x{voucher_limit}", 
-                                        image=get_image(Paths.ASSETS_FOLDER + "/tiny_red_voucher.png"),
-                                        compound='left', anchor='e', padx = 5, text_color="white")
-red_voucher_label.pack(side='right', anchor='e', expand=True)
+loot_button = customtkinter.CTkButton(bottom_left_frame, text=f"x{local_loot_boxes}", 
+                                        image=get_image(Paths.ASSETS_FOLDER + "/tiny_box.png"),
+                                        compound='left', anchor='e', width = 5, text_color="white",
+                                        fg_color= SECONDARY_COLOR,
+                                        hover_color=app_bg_color,
+                                        corner_radius=0,
+                                        command= lambda : toggle_loot_box(True))
+loot_button.pack(side='right', anchor='e', expand=True)
+update_loot_button()
+
+internet_box_button = CTkButton(app, text = 'You found an internet box!',
+                        hover_color='#1b1d21',
+                        fg_color= app_bg_color,
+                        image=get_image(Paths.ASSETS_FOLDER + "/internet_box.png"),
+                        compound="top",
+                        anchor='center', 
+                        corner_radius=0, 
+                        hover= True,
+                        command= loot_box,
+                        text_color_disabled="white")
+check_new_loot()
 
 help_icon = CTkButton(help_frame,
                         hover_color=app_bg_color,

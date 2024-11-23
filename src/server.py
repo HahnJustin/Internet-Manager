@@ -35,6 +35,9 @@ warned = False
 sound_on = True
 warning_sound_time = 15
 
+used_voucher_today = False
+used_manual_override = False
+
 class time_action_data():
     def __init__(self, time : datetime, action : Actions):
         self.datetime = time
@@ -84,6 +87,7 @@ def time_data_create(time : str, action : Actions):
         target = target.replace(year=tomorrow.year, month=tomorrow.month, day=tomorrow.day)
 
     time_datas.append(time_action_data(target, action))
+    if action is Actions.INTERNET_OFF: shutdown_times.append(target - timedelta(days=1))
 
 def update():
     global sound_on
@@ -91,14 +95,20 @@ def update():
     global now
     global warning_sound_time
     global warned
+    global internet_on
+    global used_voucher_today
+    global used_manual_override
 
     now = datetime.now()
     json_data = configreader.get_storage()
+    configreader.set_active_time()
 
     if now > cutoff_time:
         recalculate_cutoff_time()
         cull_vouchers()
         configreader.set_manual_override(False)
+
+    used_manual_override = configreader.get_manual_used()
 
     data = time_datas[0]
     warning_time = data.datetime - timedelta(minutes=warning_sound_time)
@@ -113,16 +123,22 @@ def update():
     # vouched used condition
     if str(data) in json_data[StorageKey.VOUCHERS_USED]:
         play_sfx("vouched.wav")
+        used_voucher_today = True
         print(f"{data} - [VOUCHED] {data.action}")
     elif data.action == Actions.INTERNET_OFF:
         play_sfx("internet_off.wav")
         internet_management.turn_off_wifi()
         internet_management.turn_off_ethernet()
+        if internet_on and not used_voucher_today and not used_manual_override: 
+            configreader.try_add_shutdown_loot_box()
+            libserver.start_loot_box_timer(1)
+        internet_on = False
         print(f"{data} - {data.action}")
     elif data.action == Actions.INTERNET_ON:
         play_sfx("internet_on.wav")
         internet_management.turn_on_wifi()
         internet_management.turn_on_ethernet()
+        internet_on = True
         print(f"{data} - {data.action}")
     recalculate_time(data)
     sort_data()
@@ -181,6 +197,7 @@ def get_last_relapse() -> datetime:
 
 def cull_vouchers():
     global cutoff_time
+    global used_voucher_today
     
     last_cutoff = cutoff_time - timedelta(days=1)
     for i in reversed(range(len(json_data[StorageKey.VOUCHERS_USED]))):
@@ -190,6 +207,7 @@ def cull_vouchers():
         if last_cutoff > vouched_datetime:
             json_data[StorageKey.VOUCHERS_USED].pop(i)
     configreader.force_storage(json_data)
+    used_voucher_today = False
     
 def play_sfx(sfx : str):
     if sound_on:
@@ -212,6 +230,7 @@ configreader.set_application_path(application_path)
 
 # Defining basic time variables
 now = datetime.now()
+yesterday = now - timedelta(days=1)
 tomorrow = now + timedelta(days=1)
 
 # Reading config
@@ -246,7 +265,17 @@ cull_vouchers()
 # save json
 configreader.force_storage(json_data)
 
+if StorageKey.VOUCHERS_USED in json_data:
+    for _time in json_data[StorageKey.VOUCHERS_USED]:
+        used_time = datetime.strptime(_time, '%m/%d/%y %H:%M:%S')
+        if now > used_time:
+            used_voucher_today = True
+            break
+
+used_manual_override = configreader.get_manual_used()
+
 time_datas = []
+shutdown_times = []
 
 # Intializing shutdown times
 for shutdown_time in cfg[ConfigKey.SHUTDOWN_TIMES]:
@@ -262,13 +291,37 @@ for up_time in cfg[ConfigKey.UP_TIMES]:
 
 sort_data()
 
+internet_on = False
+
 # Calculating what state the manager should be in:
 if time_datas[-1].action == Actions.INTERNET_OFF:
     internet_management.turn_off_wifi()
     internet_management.turn_off_ethernet()
+    internet_on = False
 elif time_datas[-1].action == Actions.INTERNET_ON:
     internet_management.turn_on_wifi()
     internet_management.turn_on_ethernet()
+    internet_on = True
+
+print(f" Cut-off time: {cutoff_time}")
+
+# Roll for a morning loot box
+last_active_time = configreader.get_active_time()
+print(f" Last Active Time: {last_active_time}")
+
+first_shutdown_yesterday = min(shutdown_times)
+print(f" First Shutdown Yesterday: {first_shutdown_yesterday}")
+
+pre_box_amount = configreader.get_all_loot_boxes()
+if last_active_time <= cutoff_time and last_active_time <= first_shutdown_yesterday and internet_on:
+    difference = cutoff_time - last_active_time
+    loot_boxes = difference.days
+
+    for i in range(loot_boxes): configreader.try_add_loot_box()
+
+    loot_boxes_found = configreader.get_all_loot_boxes() - pre_box_amount
+    if loot_boxes_found > 0: libserver.start_loot_box_timer(loot_boxes_found)
+    print(f" Morning Lootboxes: {loot_boxes_found}")
 
 data_thread = StoppableThread(target=lambda: every(0.25, update))
 data_thread.daemon = True

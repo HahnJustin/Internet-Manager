@@ -10,17 +10,16 @@ key: sWXO8LvX0FaQgNAbDckjy32kfBQDPtvODAVLhcc7GgM=
 # Time the internet will be cut off
 shutdown_times:
   - "23:00:00"
+  - "23:30:00"
+  - "23:45:00"
+  - "23:52:30"
   - "0:00:00"
-  - "0:30:00"
-  - "0:45:00"
-  - "0:57:30"
 
 enforced_shutdown_times:
-  - "1:00:00"
-  - "2:00:00"
+  - "0:05:00"
 
 up_times:
-  - "5:00:00"
+  - "4:00:00"
 
 ethernet:
   - "Ethernet"
@@ -28,7 +27,7 @@ ethernet:
   - "NordLynx"
 
 # Time with which determines when a new day is in streak terms
-streak_shift: "4:00"
+streak_shift: "3:00"
 
 military_time: false
 

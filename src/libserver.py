@@ -3,9 +3,13 @@ import selectors
 import json
 import io
 import struct
+import threading
 import internet_management
 import configreader
 from libuniversal import Actions, MessageKey
+
+loot_box_gained = 0
+loot_box_timer = None
 
 class Message:
     def __init__(self, selector, sock, addr):
@@ -124,13 +128,34 @@ class Message:
             configreader.reset_relapse_time()
             configreader.set_manual_override(True)
             content = {MessageKey.RESULT: "attempted to turn on internet, relapse acknowledged"}
-        elif action == Actions.ADD_VOUCHER:
-            configreader.add_voucher()
-            content = {MessageKey.RESULT: "added voucher"}
         elif action == Actions.KILL_SERVER:
             self.selector.close()
             sys.exit()
             content = {MessageKey.RESULT: "killed server"}
+        elif action == Actions.LOOT_CHECK:
+            lootbox_type = self.request.get("value")
+            lootbox_amount = 0
+            if lootbox_type == MessageKey.SHUTDOWN_LOOT_BOX:
+                lootbox_amount = configreader.open_shutdown_loot_box()
+            elif lootbox_type == MessageKey.NORMAL_LOOT_BOX:
+                lootbox_amount = configreader.get_normal_loot_boxes()
+            elif lootbox_type == MessageKey.ALL_LOOT_BOXES:
+                lootbox_amount = configreader.get_all_loot_boxes()
+            content = {MessageKey.RESULT: lootbox_amount}
+        elif action == Actions.LOOT_OPEN:
+            lootbox_type = self.request.get("value")
+            voucher_amount = 0
+            if lootbox_type == MessageKey.SHUTDOWN_LOOT_BOX:
+                voucher_amount = configreader.open_shutdown_loot_box()
+            elif lootbox_type == MessageKey.NORMAL_LOOT_BOX:
+                voucher_amount = configreader.open_loot_box()
+            stop_loot_box_timer()
+            content = {MessageKey.RESULT: voucher_amount}
+        elif action == Actions.NEW_LOOT:
+            content = {MessageKey.RESULT: loot_box_gained}
+        elif action == Actions.GET_LOOT:
+            key = configreader.get_a_loot_box()
+            content = {MessageKey.RESULT: key}
         else:
             content = {MessageKey.RESULT: f"Error: invalid action '{action}'."}
         content_encoding = "utf-8"
@@ -248,3 +273,28 @@ class Message:
         message = self._create_message(**response)
         self.response_created = True
         self._send_buffer += message
+
+def start_loot_box_timer(amount : int):
+    global loot_box_timer
+    global loot_box_gained
+
+    if loot_box_timer != None: loot_box_timer.cancel()
+
+    loot_box_gained = amount
+
+    def reset_loot_box_flag():
+        global loot_box_gained
+        loot_box_gained = 0
+
+    loot_box_timer = threading.Timer(120, reset_loot_box_flag)
+    loot_box_timer.daemon = True
+    loot_box_timer.start()
+
+def stop_loot_box_timer():
+    global loot_box_gained
+    global loot_box_timer
+
+    if loot_box_timer != None: loot_box_timer.cancel()
+
+    loot_box_gained = 0
+    loot_box_timer = None
