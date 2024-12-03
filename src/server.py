@@ -12,7 +12,7 @@ import internet_management
 import configreader
 import pyuac
 from playsound import playsound
-from libuniversal import Actions, ConfigKey, StorageKey, Paths
+from libuniversal import Actions, ConfigKey, StorageKey, Paths, TimeKey
 from datetime import datetime, timedelta
 
 SECONDS_DATA_UPDATE = 60
@@ -101,7 +101,6 @@ def update():
 
     now = datetime.now()
     json_data = configreader.get_storage()
-    configreader.set_active_time()
 
     if now > cutoff_time:
         recalculate_cutoff_time()
@@ -203,7 +202,7 @@ def cull_vouchers():
     for i in reversed(range(len(json_data[StorageKey.VOUCHERS_USED]))):
         vouched_time = json_data[StorageKey.VOUCHERS_USED][i]
         vouched_datetime = configreader.str_to_datetime(vouched_time)
-        print(f"hello {i} {vouched_datetime}")
+        print(f"Culling Voucher {i} {vouched_datetime}")
         if last_cutoff > vouched_datetime:
             json_data[StorageKey.VOUCHERS_USED].pop(i)
     configreader.force_storage(json_data)
@@ -253,6 +252,13 @@ else:
    json_data = {StorageKey.VOUCHER:3, StorageKey.SINCE_LAST_RELAPSE: string_now(),
                 StorageKey.VOUCHER_LIMIT : 5, StorageKey.VOUCHERS_USED : [],
                 StorageKey.MANUAL_USED : False}
+   
+json_time_data = {}
+if os.path.isfile(configreader.get_json_time_path()):
+   json_time_data = configreader.get_json_time()
+else:
+   json_time_data = {TimeKey.LAST_TIME_ACTIVE: string_now()}
+
 
 if StorageKey.SINCE_LAST_RELAPSE in json_data:
     relapse_time = get_last_relapse()
@@ -313,7 +319,7 @@ first_shutdown_yesterday = min(shutdown_times)
 print(f" First Shutdown Yesterday: {first_shutdown_yesterday}")
 
 pre_box_amount = configreader.get_all_loot_boxes()
-if last_active_time <= cutoff_time and last_active_time <= first_shutdown_yesterday and internet_on:
+if last_active_time <= cutoff_time - timedelta(days=1) and last_active_time <= first_shutdown_yesterday and internet_on:
     difference = cutoff_time - last_active_time
     loot_boxes = difference.days
 
@@ -326,6 +332,10 @@ if last_active_time <= cutoff_time and last_active_time <= first_shutdown_yester
 data_thread = StoppableThread(target=lambda: every(0.25, update))
 data_thread.daemon = True
 data_thread.start()
+
+time_thread = StoppableThread(target=lambda: every(20, configreader.set_active_time))
+time_thread.daemon = True
+time_thread.start()
 
 sel = selectors.DefaultSelector()
 

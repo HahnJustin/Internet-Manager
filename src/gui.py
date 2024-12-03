@@ -47,9 +47,11 @@ stop_gifs = False
 used_voucher_today = False
 used_manual_override = False
 local_vouchers = 0
+local_vouchers_used = 0
 status_timer = None
 lootbox_timer = None
 current_lootbox = None
+internet_box_button = None
 
 global now
 global colors
@@ -75,6 +77,7 @@ class time_action_data():
         global local_vouchers
         global internet_on
         global time_action_buttons
+        global local_vouchers_used
 
         index = time_action_buttons.index(self)
         can_vouch = True
@@ -86,6 +89,7 @@ class time_action_data():
         
         if not self.vouched and local_vouchers > 0 and internet_on and can_vouch:
             self.make_vouched()
+            local_vouchers_used += 1
             local_vouchers -= 1
             do_request(Actions.USED_VOUCHER, str(self))
         elif self.vouched:
@@ -94,6 +98,7 @@ class time_action_data():
                 if button.vouched:
                     button.make_unvouched()
                     local_vouchers += 1
+                    local_vouchers_used -= 1
                     do_request(Actions.UNUSED_VOUCHER, str(button))
         update_voucher_label()
 
@@ -228,7 +233,7 @@ def do_request(action, value) -> str:
             for key, mask in events:
                 message = key.data
                 try:
-                    print("processing message")
+                    print("Processing Message")
                     message.process_events(mask)
                 except Exception:
                     print(
@@ -348,12 +353,17 @@ def get_datetime():
 
 def show_status(status : str, positive : bool):
     global status_timer
+    global internet_box_button
 
     if not positive:
         status_label.configure(text=status, image=get_image(Paths.ASSETS_FOLDER + "/red_ribbon.png"))
     else:
         status_label.configure(text=status, image=get_image(Paths.ASSETS_FOLDER + "/blue_ribbon.png"))
     status_label.pack()
+
+    if internet_box_button is not None and internet_box_button.winfo_ismapped():
+        internet_box_button.pack_forget()
+        internet_box_button.pack(fill="both", expand=True, padx=20, pady=20)
 
     if status_timer is not None:
         status_timer.cancel()
@@ -457,16 +467,20 @@ def update_streak_graphics():
 def update_voucher_label():
     voucher_label.configure(text=f"x{local_vouchers}")
 
-    if local_vouchers >= voucher_limit:
+    if local_vouchers + local_vouchers_used >= voucher_limit:
         voucher_label.configure(text_color=FULL_COLOR)
     else:
         voucher_label.configure(text_color="#ffffff")
 
 def update_loot_button():
     global loot_button
+    global loot_box_openable
     loot_button.configure(text=f"x{local_loot_boxes}")
 
-    if local_loot_boxes >= loot_limit:
+    limit_offset = 0
+    if not loot_box_openable: limit_offset += 1
+
+    if local_loot_boxes >= loot_limit - limit_offset:
         loot_button.configure(text_color=FULL_COLOR)
     else:
         loot_button.configure(text_color="#ffffff")
@@ -474,6 +488,7 @@ def update_loot_button():
 def time_action_button_create(time : str, label_type : ConfigKey) -> time_action_data:
     global tomorrow
     global now
+    global local_vouchers_used
 
     target = datetime.strptime(time, '%H:%M:%S')
     target = target.replace(year=now.year, month=now.month, day=now.day)
@@ -495,6 +510,7 @@ def time_action_button_create(time : str, label_type : ConfigKey) -> time_action
     time_action_buttons.append(data)
     if str(data) in json_data[StorageKey.VOUCHERS_USED]:
         data.make_vouched()
+        local_vouchers_used += 1
 
 def set_icon(internet_on : bool):
     if internet_on:
@@ -628,7 +644,7 @@ def toggle_loot_box(on : bool, new_loot_amount = 0):
     global lootbox_timer
     
     #Box is already screen condition
-    if not loot_box_openable:
+    if (not loot_box_openable) and ((not on) or new_loot_amount > 0):
         local_loot_boxes += 1
         update_loot_button()
 
@@ -650,7 +666,8 @@ def toggle_loot_box(on : bool, new_loot_amount = 0):
         internet_box_button.pack(fill="both", expand=True, padx=20, pady=20)
         internet_box_button.bind("<Enter>", lambda e: internet_box_button.configure(text="Click to open!"))
         internet_box_button.bind("<Leave>", lambda e: internet_box_button.configure(text=idle_text))
-        local_loot_boxes = local_loot_boxes - 1
+
+        if new_loot_amount == 0: local_loot_boxes = local_loot_boxes - 1
         loot_box_openable = False
         update_loot_button()
 
@@ -681,12 +698,13 @@ def get_loot():
     global loot_box_openable
     global lootbox_timer
     global current_lootbox
+    global local_vouchers_used
 
     voucher_amount = do_request(Actions.LOOT_OPEN, current_lootbox)
 
     if voucher_amount <= 0:
         internet_box_button.configure(text='There was nothing inside :(')
-    elif local_vouchers + voucher_amount < voucher_limit:
+    elif local_vouchers + voucher_amount + local_vouchers_used <= voucher_limit:
         internet_box_button.configure(text='You found a voucher!!!', image=get_image(Paths.ASSETS_FOLDER + "\\voucher.png"))
         local_vouchers += 1
         update_voucher_label()
@@ -701,9 +719,15 @@ def get_loot():
 
 def check_new_loot():
     global lootbox_timer
+    global local_loot_boxes
+    global loot_limit
+    global loot_box_openable
 
     new_loot_amount = do_request(Actions.NEW_LOOT, "")
-    has_new_loot = new_loot_amount > 0 and local_loot_boxes > 0
+
+    limit_offset = 0
+    if not loot_box_openable: limit_offset += 1
+    has_new_loot = new_loot_amount > 0 and (local_loot_boxes <= loot_limit - limit_offset)
     
     if has_new_loot: 
         toggle_loot_box(True, new_loot_amount)
@@ -842,7 +866,7 @@ last_relapse = get_last_relapse()
 
 # Set military time or not
 if ConfigKey.MILITARY_TIME in cfg and not cfg[ConfigKey.MILITARY_TIME]:
-    print("not military time")
+    print("Not using military time")
     time_format = NORMAL_TIME
 
 if StorageKey.VOUCHERS_USED in json_data:

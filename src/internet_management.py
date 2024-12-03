@@ -33,14 +33,18 @@ def turn_on_ethernet():
     global internet_on
     cfg = configreader.get_config()
     for ethernet in cfg[ConfigKey.ETHERNET]:
-        execute_cmd(CMD_BASE.format(ETHERNET_CMD_BASE.format(ethernet) + " enabled"))
+        # Enclose the Ethernet name in quotes
+        quoted_ethernet = f'"{ethernet}"'
+        execute_cmd(CMD_BASE.format(ETHERNET_CMD_BASE.format(quoted_ethernet) + " enabled"))
     internet_on = True
 
 def turn_off_ethernet():
     global internet_on
     cfg = configreader.get_config()
     for ethernet in cfg[ConfigKey.ETHERNET]:
-        execute_cmd(CMD_BASE.format(ETHERNET_CMD_BASE.format(ethernet) + " disabled"))
+        # Enclose the Ethernet name in quotes
+        quoted_ethernet = f'"{ethernet}"'
+        execute_cmd(CMD_BASE.format(ETHERNET_CMD_BASE.format(quoted_ethernet) + " disabled"))
     internet_on = False
 
 def is_admin():

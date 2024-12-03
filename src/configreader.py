@@ -6,7 +6,7 @@ import json
 from os import path
 from cryptography.fernet import Fernet
 from datetime import datetime, timedelta
-from libuniversal import ConfigKey, MessageKey, StorageKey, Paths
+from libuniversal import ConfigKey, MessageKey, StorageKey, TimeKey, Paths
 
 SHUTDOWN_LOOT_BOX_ODDS = 90
 SHUTDOWN_VOUCHER_ODDS = 50
@@ -19,6 +19,7 @@ DEFAULT_LOOT_BOX_LIMIT = 5
 
 cfg = None
 json_data = {}
+json_time_data = {}
 application_path = None
 
 key = Fernet.generate_key()
@@ -79,6 +80,23 @@ def get_storage() -> dict:
 
     return json_data
 
+def get_json_time() -> dict:
+    global json_time_data
+    global key
+
+    # decrypt storage
+    if not json_time_data and os.path.isfile(get_json_time_path()):
+        f = open(get_json_time_path()) 
+        encodedBytes = bytes(f.read(), 'utf-8')
+        fernet = Fernet(key)
+        try:
+            json_time_data = json.loads(fernet.decrypt(encodedBytes))
+        except:
+            json_time_data = {TimeKey.LAST_TIME_ACTIVE: now_datetime_to_str()}
+            save_json_time()
+
+    return json_time_data
+
 def force_storage(forced_json_data):
     global json_data
     json_data = forced_json_data
@@ -91,6 +109,15 @@ def save_storage():
     encrypted = fernet.encrypt(json.dumps(json_data, indent=2).encode('utf-8'))
 
     with open(get_json_path(), 'wb') as f:
+        f.write(encrypted)
+
+# encrypts and saves time json file
+def save_json_time():
+    global key
+    fernet = Fernet(key)
+    encrypted = fernet.encrypt(json.dumps(json_time_data, indent=2).encode('utf-8'))
+
+    with open(get_json_time_path(), 'wb') as f:
         f.write(encrypted)
 
 def use_voucher(time):
@@ -110,6 +137,13 @@ def get_voucher_limit() -> int:
     json_data[StorageKey.VOUCHER_LIMIT] = DEFAULT_VOUCHER_LIMIT
     save_storage()
     return DEFAULT_VOUCHER_LIMIT
+
+def get_vouchers_used() -> int:
+    vouchers_used = 0
+    if StorageKey.VOUCHERS_USED in json_data:
+        vouchers_used = len(json_data[StorageKey.VOUCHERS_USED])
+    
+    return vouchers_used
 
 def get_loot_box_limit() -> int:
     if StorageKey.LOOT_BOX_LIMIT in json_data:
@@ -144,7 +178,7 @@ def add_voucher():
 def add_voucher(amount : int):
     if json_data and StorageKey.VOUCHER in json_data:
         current_vouchers = json_data[StorageKey.VOUCHER]
-        json_data[StorageKey.VOUCHER] = min(get_voucher_limit(), current_vouchers + amount)
+        json_data[StorageKey.VOUCHER] = min(get_voucher_limit() - get_vouchers_used(), current_vouchers + amount)
         save_storage()
 
 def reset_relapse_time():
@@ -160,6 +194,9 @@ def str_to_datetime(time : str) -> datetime:
 
 def get_json_path():
     return os.path.join(application_path, Paths.JSON_FILE.value)
+
+def get_json_time_path():
+    return os.path.join(application_path, Paths.JSON_TIME_FILE.value)
 
 def try_add_loot_box():
     add_box = random.randint(0,99) < LOOT_BOX_ODDS
@@ -253,24 +290,13 @@ def get_a_loot_box() -> MessageKey:
 
     return MessageKey.NO_LOOT_BOX
 
-
-def set_if_shutdown(shutdown : bool):
-    json_data[StorageKey.SHUTDOWN_SINCE_SHIFT] = shutdown
-    save_storage()
-
-def get_if_shutdown_since() -> bool:
-    if StorageKey.SHUTDOWN_SINCE_SHIFT in json_data:
-        return json_data[StorageKey.SHUTDOWN_SINCE_SHIFT]
-    else:
-        return False
-
 def set_active_time():
-    json_data[StorageKey.LAST_TIME_ACTIVE] = now_datetime_to_str()
-    save_storage()
+    json_time_data[TimeKey.LAST_TIME_ACTIVE] = now_datetime_to_str()
+    save_json_time()
 
 def get_active_time() -> datetime:
-    if StorageKey.LAST_TIME_ACTIVE in json_data:
-        return str_to_datetime(json_data[StorageKey.LAST_TIME_ACTIVE])
+    if TimeKey.LAST_TIME_ACTIVE in json_time_data:
+        return str_to_datetime(json_time_data[TimeKey.LAST_TIME_ACTIVE])
     else:
         return datetime.now()
     

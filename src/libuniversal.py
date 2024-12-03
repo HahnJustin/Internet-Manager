@@ -41,7 +41,6 @@ class ConfigKey(str, Enum):
 
 class StorageKey(str, Enum):
     SINCE_LAST_RELAPSE = "last_relapse"
-    LAST_TIME_ACTIVE = "last_active"
     VOUCHER = "voucher"
     VOUCHERS_USED = "vouchers_used"
     VOUCHER_LIMIT = "voucher_limit"
@@ -50,8 +49,12 @@ class StorageKey(str, Enum):
     SHUTDOWN_LOOT_BOXES = "shutdown_loot_boxes"
     LOOT_BOX_LIMIT = "loot_box_limit"
 
+class TimeKey(str, Enum):
+    LAST_TIME_ACTIVE = "last_active"
+
 class Paths(str, Enum):
     JSON_FILE = "storage.txt"
+    JSON_TIME_FILE = "active_time.txt"
     CONFIG_FILE = "config.yaml"
     CLIENT_CONFIG_FILE = "client-config.yaml"
     ASSETS_FOLDER = "assets"
