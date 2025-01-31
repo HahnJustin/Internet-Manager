@@ -20,7 +20,8 @@ from colour import Color
 from datetime import datetime, timedelta
 from PIL import Image
 
-SOFTWARE_VERSION = "v1.1.1"
+SOFTWARE_VERSION_V_LESS = '1.2.0'
+SOFTWARE_VERSION = "v" + SOFTWARE_VERSION_V_LESS
 
 COLOR_AMOUNT = 100
 SHUTDOWN_COLORS = [(224, 0, 0), (69, 75, 92),(0, 0, 255),(0, 0, 0)]
@@ -768,39 +769,102 @@ def help_dialogue():
     # Center the popup on the main window
     x = app.winfo_rootx()
     y = app.winfo_rooty()
-    height = app.winfo_height()
-    width = app.winfo_width()
-    top.geometry("+%d+%d" % (x - 125 + width / 2, y - 50 + height / 2))
-    top.minsize(400, 250)
-    top.maxsize(400, 250)
+    height = app.winfo_height() - 200
+    width = app.winfo_width() - 350
+    top.geometry("+%d+%d" % (x + width / 2, y - 50 + height / 2))
+    top.minsize(500, 700)
+    top.maxsize(500, 700)
     top.attributes('-topmost', True)
     top.title("Info")
 
-    info_title_label = customtkinter.CTkLabel(top, text= f"Info", font=("DreiFraktur", 32), pady=10)
+    # Title Label
+    info_title_label = customtkinter.CTkLabel(top, text="Info", font=("DreiFraktur", 32), pady=10)
     info_title_label.pack(side='top')
 
+    # Software Version Label
     info_string = f"Internet Manager {SOFTWARE_VERSION}"
+    software_v_label = customtkinter.CTkLabel(top, text=info_string, font=('arial', 18), pady=2.5)
+    software_v_label.pack(side='top', fill='x', padx=20)
 
-    software_v_label = customtkinter.CTkLabel(top, anchor='w', text= info_string, font=('arial', 18), pady=2.5)
-    software_v_label.pack(side='top')
+    # Description Label
+    desc_string = "Made by Dalichrome '25 \n "
+    desc_label = customtkinter.CTkLabel(top, text=desc_string, font=('arial', 16), pady=2.5)
+    desc_label.pack(side='top', fill='x', padx=20)
 
-    desc_string = f"Made by Dalichrome '24"
+    # FAQ Label
+    faq_title_label = customtkinter.CTkLabel(top, text="~Faq~", font=("DreiFraktur", 26), pady=10)
+    faq_title_label.pack(side='top')
 
-    desc_label = customtkinter.CTkLabel(top, anchor='w', text= desc_string, font=('arial', 16), pady=2.5)
-    desc_label.pack(side='top')
+    # FAQ Desc Label
+    faq_desc_string = ("How do I re-configure the manager? \n"
+                   "    - Reinstall the manager using the installer or modify the config.json file. The installer actually reads your config file if it exists, so you won't need to re-enter any data. \n \n"
+                   "How do loot boxes drop? \n"
+                   "    - There are two types of loot boxes, one drops at shutdown, one if you turn off your computer before shutdown \n \n"
+                   "How do I use vouchers? \n"
+                   "    - Right click on the configured times \n \n "
+                   "How do I use my stored loot boxes?  \n"
+                   "    - Click on the loot box icon \n \n"
+                   "My internet isn't shutting off, why? \n"
+                   "    - Most likely your networks aren't configured correctly, find your network name and add it to then config when you re-configure it. \n \n"
+                   "If I reinstall, will I lose my streak?  \n"
+                   "    - No if you reinstall or upgrade, your streak is safe. That data is in the storage.json file, feel free to make an extra copy \n \n"
+                   "What if none of these address my question? \n"
+                   "    - If that doesn't work, email support@dalichro.me \n \n")
+    faq_desc_string = customtkinter.CTkLabel(top, justify='left', wraplength=400, text=faq_desc_string, font=('arial', 10), pady=2.5)
+    faq_desc_string.pack(side='top', fill='x', padx=20)
 
-    label = customtkinter.CTkLabel(top, anchor='w', text= f"Links", font=("DreiFraktur", 22), pady=10)
+    # Links Section Title
+    label = customtkinter.CTkLabel(top, text="Links", font=("DreiFraktur", 22), pady=10)
     label.pack(side='top')
 
-    link = customtkinter.CTkLabel(top, anchor='w', text="Check out my other projects!", font=('arial', 16), pady=5, text_color="#366cbc", cursor="hand2")
-    link.pack()
-    link.bind("<Button-1>", lambda e: open_url("https://www.dalichro.me/projects"))
-    
+    # Social Media Links Frame
+    social_frame = customtkinter.CTkFrame(top)
+    social_frame.pack()
+
+    # Dictionary of social media platforms and their URLs
+    social_medias = {
+        "website": "https://www.dalichro.me",
+        "bluesky": "https://bsky.app/profile/dalichrome.bsky.social",
+        "itch": "https://dalichrome.itch.io/"
+    }
+
+    # Dictionary to hold image references
+    social_images = {}
+
+    for platform, url in social_medias.items():
+        image_path = resource_path(f"{Paths.ASSETS_FOLDER}/{platform}_link.png")
+        try:
+            social_image = get_image(image_path)
+        except Exception as e:
+            print(f"Error loading image for {platform}: {e}")
+            continue
+        social_images[platform] = social_image  # Keep a reference to prevent garbage collection
+
+        # Create a button for each social media link
+        btn = customtkinter.CTkButton(
+            social_frame,
+            image=social_image,
+            text="",
+            width=50,
+            height=50,
+            fg_color="transparent",
+            hover_color="#404040",
+            cursor="hand2",
+            command=lambda url=url: open_url(url)
+        )
+        btn.pack(side='left', padx=10)
+
+    # Store the image references to prevent garbage collection
+    top.social_images = social_images
+
     # Set the icon twice to ensure it persists
-    icon_path = resource_path(Paths.ASSETS_FOLDER + "/info_icon.ico")
-    top.wm_iconbitmap()
+    icon_path = resource_path(f"{Paths.ASSETS_FOLDER}/info_icon.ico")
+    try:
+        top.wm_iconbitmap(icon_path)
+    except Exception as e:
+        print(f"Error setting icon: {e}")
     top.update_idletasks()     # Force any pending updates
-    top.after(201, lambda :top.iconbitmap(icon_path))
+    top.after(201, lambda: top.iconbitmap(icon_path))
 
     # Add widgets and focus
     top.focus_set()
@@ -831,7 +895,7 @@ def register_font(font_path):
         #ctypes.windll.user32.SendMessageW(0xFFFF, 0x001D, 0, 0)
 
 # no clue why this works, but it allows the taskbar icon to be custom
-myappid = 'dalichrome.internetmanager.1.1.1' # arbitrary string
+myappid = 'dalichrome.internetmanager.' + SOFTWARE_VERSION_V_LESS # arbitrary string
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
 sel = selectors.DefaultSelector()

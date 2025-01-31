@@ -1,7 +1,7 @@
 ; -- Example Inno Setup script snippet --
 
 #define MyAppName "Internet Manager"
-#define MyAppNameNoSpace "Internet_Manager"
+#define MyAppNameNoSpace "Internet-Manager"
 #define MyAppVersion "1.2.0"
 #define MyAppPublisher "Dalichrome"
 #define MyAppURL "https://dalichro.me/project/internet-manager/"
@@ -23,13 +23,20 @@ DefaultDirName={autopf}\{#MyAppName}
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
-OutputBaseFilename={#MyAppNameNoSpace}_{#MyAppVersion}_Setup
+OutputBaseFilename={#MyAppNameNoSpace}-{#MyAppVersion}-Installer
+UninstallDisplayName=Uninstaller
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
-UninstallDisplayName=Uninstall
 CloseApplications=force
+LicenseFile=EULA
+SetupIconFile=src\assets\globe_server.ico
+WizardImageFile=src\assets\internet_manager_frame.bmp
+WizardSmallImageFile=src\assets\globex147.bmp
+WizardImageStretch=yes
+WizardImageAlphaFormat=premultiplied
+WizardResizable=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -46,7 +53,7 @@ Source: "dist\{#MyAppRemoveTasks}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\{#MyAppKillServer}"; DestDir: "{app}"; Flags: ignoreversion
 
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "EULA"; DestDir: "{app}"; Flags: ignoreversion
 Source: "attribution.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
@@ -324,7 +331,7 @@ begin
   EditEnforcedShutdownTimes.Text := ReadJsonArrayAsString(JSON, 'enforced_shutdown_times',
       '0:05:00');
   EditUpTimes.Text := ReadJsonArrayAsString(JSON, 'up_times', '4:30:00');
-  EditNetworks.Text := ReadJsonArrayAsString(JSON, 'networks', 'Ethernet,Ethernet 2,Wi-Fi');
+  EditNetworks.Text := ReadJsonArrayAsString(JSON, 'networks', 'Ethernet,Wi-Fi');
   EditWarningMinutes.Text := IntToStr(ReadJsonInteger(JSON, 'warning_minutes', 15));
   CheckMilitaryTime.Checked := ReadJsonBoolean(JSON, 'military_time', False);
   CheckSoundOn.Checked := ReadJsonBoolean(JSON, 'sound_on', True);
@@ -395,6 +402,14 @@ procedure InitializeWizard();
 var
   NextTop: Integer;
 begin
+
+  // -------------------- Universal Styling --------------------
+  WizardForm.Caption := '{#MyAppName}' + ' ' + '{#MyAppVersion}' + ' Installer';
+
+  // Change the main wizard background color to light blue (RGB(230, 240, 255))
+  WizardForm.Color := $00342022;
+
+
   // -------------------- Basic Settings Page --------------------
   BasicPage := CreateCustomPage(wpSelectDir,
     'Basic Settings',
@@ -404,19 +419,19 @@ begin
 
   // Shutdown Times
   NextTop := CreateLabeledEdit(BasicPage.Surface,
-    'Shutdown Times (comma-separated):', EditShutdownTimes, 10, NextTop, 300) + 12;
+    'Skippable Internet Shutdown Times (comma-separated):', EditShutdownTimes, 10, NextTop, 300) + 12;
   // Enforced Shutdown Times
   NextTop := CreateLabeledEdit(BasicPage.Surface,
-    'Enforced Shutdown Times (comma-separated):', EditEnforcedShutdownTimes, 10, NextTop, 300) + 12;
+    'Unskippable Internet Shutdown Times (comma-separated):', EditEnforcedShutdownTimes, 10, NextTop, 300) + 12;
   // Up Times
   NextTop := CreateLabeledEdit(BasicPage.Surface,
-    'Up Times (comma-separated):', EditUpTimes, 10, NextTop, 300) + 12;
+    'Internet Turn On Times (comma-separated):', EditUpTimes, 10, NextTop, 300) + 12;
   // Ethernet
   NextTop := CreateLabeledEdit(BasicPage.Surface,
-    'Networks (comma-separated):', EditNetworks, 10, NextTop, 300) + 12;
+    'Networks (comma-separated) [Use "View Network Connections" to find network names]:', EditNetworks, 10, NextTop, 300) + 12;
   // Warning Minutes
   NextTop := CreateLabeledEdit(BasicPage.Surface,
-    'Warning Minutes:', EditWarningMinutes, 10, NextTop, 100) + 12;
+    'Warning Minutes (How many minutes prior to a shutdown you hear a noise):', EditWarningMinutes, 10, NextTop, 100) + 12;
 
   // Military Time
   CheckMilitaryTime := TCheckBox.Create(WizardForm);
@@ -424,7 +439,7 @@ begin
   CheckMilitaryTime.Top := NextTop + 4;
   CheckMilitaryTime.Left := 10;
   CheckMilitaryTime.Width := 200;
-  CheckMilitaryTime.Caption := 'Military Time?';
+  CheckMilitaryTime.Caption := 'Use Military Time';
   CheckMilitaryTime.Checked := False;
   NextTop := CheckMilitaryTime.Top + CheckMilitaryTime.Height + 12;
 
@@ -434,7 +449,7 @@ begin
   CheckSoundOn.Top := NextTop + 4;
   CheckSoundOn.Left := 10;
   CheckSoundOn.Width := 200;
-  CheckSoundOn.Caption := 'Sound On?';
+  CheckSoundOn.Caption := 'Sound On';
   CheckSoundOn.Checked := True;
   NextTop := CheckSoundOn.Top + CheckSoundOn.Height + 12;
 
@@ -442,7 +457,7 @@ begin
   // -------------------- Advanced Settings Page --------------------
   AdvancedPage := CreateCustomPage(BasicPage.ID,
     'Advanced Settings',
-    'Configure advanced settings like Host, Port, etc.');
+    'Configure advanced settings like Host, Port, etc. [DO NOT CHANGE THESE UNLESS YOU KNOW WHAT YOURE DOING]');
 
   NextTop := 0;
 
@@ -489,7 +504,7 @@ begin
     begin
       StartManagerCheckbox := TCheckBox.Create(WizardForm.FinishedPage);
       StartManagerCheckbox.Parent := WizardForm.FinishedPage;
-      StartManagerCheckbox.Left := ScaleX(215);
+      StartManagerCheckbox.Left := ScaleX(220);
       StartManagerCheckbox.Top := ScaleY(140);
       StartManagerCheckbox.Width := 200;
       StartManagerCheckbox.Caption := 'Start Internet Manager now';

@@ -99,6 +99,7 @@ def create_gui_task(scheduler, action_path, current_user):
     principal = task_def.Principal
     principal.UserId = current_user
     principal.LogonType = TASK_LOGON_INTERACTIVE_TOKEN
+    principal.RunLevel = 1
 
     # Register the task
     TASK_CREATE_OR_UPDATE = 6
