@@ -15,12 +15,12 @@ import ctypes
 import webbrowser
 import random
 from libuniversal import Actions, ConfigKey, StorageKey, Paths, MessageKey
-from customtkinter import CTkButton
+from customtkinter import CTkButton, CTkFont
 from colour import Color
 from datetime import datetime, timedelta
 from PIL import Image
 
-SOFTWARE_VERSION = "v1.1"
+SOFTWARE_VERSION = "v1.1.1"
 
 COLOR_AMOUNT = 100
 SHUTDOWN_COLORS = [(224, 0, 0), (69, 75, 92),(0, 0, 255),(0, 0, 0)]
@@ -259,6 +259,7 @@ def update_gui():
     global date_label
     global time_label
     global internet_on
+    global local_vouchers_used
 
     (_date, _time) = get_datetime()
     date_label.configure(text=_date)
@@ -296,6 +297,8 @@ def update_gui():
             show_status("Voucher Consumed", True)
             used_voucher_today = True
             toggle_vouched_icon(used_voucher_today)
+            local_vouchers_used -= 1
+            update_voucher_label()
         elif type(data) == shutdown_data or type(data) == enforced_shutdown_data:
             set_icon(False)
             show_status("Internet Shutdown Triggered", False)
@@ -637,18 +640,18 @@ def toggle_relapse_button(on : bool):
     else:
         relapse_button.pack_forget()
 
-def toggle_loot_box(on : bool, new_loot_amount = 0):
+def toggle_loot_box(show_box : bool, new_loot_amount = 0):
     global loot_box_openable
     global local_loot_boxes
     global current_lootbox
     global lootbox_timer
     
     #Box is already screen condition
-    if (not loot_box_openable) and ((not on) or new_loot_amount > 0):
+    if (not loot_box_openable) and ((not show_box) or new_loot_amount > 0):
         local_loot_boxes += 1
         update_loot_button()
 
-    if on and (loot_box_openable or new_loot_amount > 0) and local_loot_boxes > 0:
+    if show_box and ((loot_box_openable and local_loot_boxes > 0) or new_loot_amount > 0):
 
         current_lootbox = do_request(Actions.GET_LOOT, "")
         if current_lootbox == MessageKey.NO_LOOT_BOX: return
@@ -673,7 +676,7 @@ def toggle_loot_box(on : bool, new_loot_amount = 0):
 
         if lootbox_timer != None: lootbox_timer.cancel()
         lootbox_timer = run_function_in_minute(lambda : toggle_loot_box(False))
-    elif not on:
+    elif not show_box:
         internet_box_button.pack_forget()
         loot_box_openable = True
 
@@ -773,7 +776,7 @@ def help_dialogue():
     top.attributes('-topmost', True)
     top.title("Info")
 
-    info_title_label = customtkinter.CTkLabel(top, text= f"Info", font=('old english text mt', 32), pady=10)
+    info_title_label = customtkinter.CTkLabel(top, text= f"Info", font=("DreiFraktur", 32), pady=10)
     info_title_label.pack(side='top')
 
     info_string = f"Internet Manager {SOFTWARE_VERSION}"
@@ -786,7 +789,7 @@ def help_dialogue():
     desc_label = customtkinter.CTkLabel(top, anchor='w', text= desc_string, font=('arial', 16), pady=2.5)
     desc_label.pack(side='top')
 
-    label = customtkinter.CTkLabel(top, anchor='w', text= f"Links", font=('old english text mt', 22), pady=10)
+    label = customtkinter.CTkLabel(top, anchor='w', text= f"Links", font=("DreiFraktur", 22), pady=10)
     label.pack(side='top')
 
     link = customtkinter.CTkLabel(top, anchor='w', text="Check out my other projects!", font=('arial', 16), pady=5, text_color="#366cbc", cursor="hand2")
@@ -815,11 +818,30 @@ def update_help_colors(data : time_action_data):
     help_frame.configure(fg_color= fg_color)
     help_icon.configure(fg_color= fg_color, hover_color= hv_color)
 
+def register_font(font_path):
+    if sys.platform == "win32":
+        FR_PRIVATE = 0x10
+        FR_NOT_ENUM = 0x20
+        AddFontResourceEx = ctypes.windll.gdi32.AddFontResourceExW
+        if AddFontResourceEx(font_path, FR_PRIVATE, 0) == 0:
+            print("Failed to add font.")
+        else:
+            print("Font added successfully.")
+        # Notify system about the font change
+        #ctypes.windll.user32.SendMessageW(0xFFFF, 0x001D, 0, 0)
+
 # no clue why this works, but it allows the taskbar icon to be custom
-myappid = 'mycompany.myproduct.subproduct.version' # arbitrary string
+myappid = 'dalichrome.internetmanager.1.1.1' # arbitrary string
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
 sel = selectors.DefaultSelector()
+
+# Path to the drei font
+drei_path = resource_path(Paths.FONTS_FOLDER + '/DreiFraktur.ttf')
+register_font(drei_path)
+
+cloyster_path = resource_path(Paths.FONTS_FOLDER + '/CloisterBlack.ttf')
+register_font(cloyster_path)
 
 # Reading config
 try:
@@ -947,16 +969,16 @@ for up_time in cfg[ConfigKey.UP_TIMES]:
 sort_labels()
 
 # Adding Time
-date_label = customtkinter.CTkLabel(top_frame, text_color="#666e7a", text="Date", font=("Arial", 20), pady=0)
-time_label = customtkinter.CTkLabel(top_frame, text=string_now(), font=("old english text mt", 40), padx=10, text_color="white")
+date_label = customtkinter.CTkLabel(top_frame, text_color="#666e7a", text="Date", font=("Cloister Black", 25), pady=0)
+time_label = customtkinter.CTkLabel(top_frame, text=string_now(), font=("Cloister Black", 45), padx=10, text_color="white")
 
 date_label.pack(side='top')
 time_label.pack(side='top')
 
-time_until_label = customtkinter.CTkLabel(top_frame, text='', font=("Arial", 20))
+time_until_label = customtkinter.CTkLabel(top_frame, text='', font=("Cloister Black", 25))
 time_until_label.pack()
 
-status_label = customtkinter.CTkLabel(app, text=f"", text_color="white", font=("old english text mt",20), compound='center', anchor='n')
+status_label = customtkinter.CTkLabel(app, text=f"", text_color="white", font=("DreiFraktur", 15), compound='center', anchor='n')
 status_label.pack_forget()
 
 # Initial Status

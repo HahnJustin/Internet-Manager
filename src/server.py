@@ -216,9 +216,9 @@ def play_sfx(sfx : str):
             playsound(resource_path(Paths.SFX_FOLDER + '\\' + sfx))
 
 if not pyuac.isUserAdmin():
-        print("Re-launching as admin!")
-        pyuac.runAsAdmin()
-        sys.exit()
+   print("Re-launching as admin!")
+   pyuac.runAsAdmin()
+   sys.exit()
 
 # Getting Application Path - Thanks Max Tet
 if getattr(sys, 'frozen', False):
@@ -296,6 +296,10 @@ for up_time in cfg[ConfigKey.UP_TIMES]:
     time_data_create(up_time, Actions.INTERNET_ON)
 
 sort_data()
+
+disabled = False
+if ConfigKey.DISABLED in cfg:
+    internet_management.set_disabled(cfg[ConfigKey.DISABLED])
 
 internet_on = False
 

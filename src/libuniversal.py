@@ -30,7 +30,7 @@ class ConfigKey(str, Enum):
     UP_TIMES = "up_times"
     SHUTDOWN_TIMES = "shutdown_times"
     ENFORCED_SHUTDOWN_TIMES = "enforced_shutdown_times"
-    ETHERNET = "ethernet"
+    NETWORKS = "networks"
     HOST = "host"
     PORT = "port"
     MILITARY_TIME = "military_time"
@@ -38,6 +38,7 @@ class ConfigKey(str, Enum):
     WARNING_MINUTES = "warning_minutes"
     KEY = "key"
     DEBUG = "debug"
+    DISABLED = "disabled"
 
 class StorageKey(str, Enum):
     SINCE_LAST_RELAPSE = "last_relapse"
@@ -55,7 +56,8 @@ class TimeKey(str, Enum):
 class Paths(str, Enum):
     JSON_FILE = "storage.txt"
     JSON_TIME_FILE = "active_time.txt"
-    CONFIG_FILE = "config.yaml"
+    CONFIG_FILE = "config.json"
     CLIENT_CONFIG_FILE = "client-config.yaml"
     ASSETS_FOLDER = "assets"
+    FONTS_FOLDER = "fonts"
     SFX_FOLDER = "sfx"
