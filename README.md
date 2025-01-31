@@ -29,15 +29,6 @@ Audio also can be configured to play to warn the user that a cut-off/shutdown is
 
 > [!CAUTION]
 > You must configure specifically the networks you want to shutdown with the manager, you can find the names of these using "view internet connections"
-> This also for now means you must list Wi-Fi networks as well under the ethernet section
-
-### How to configure the Internet Manager
-1. Run the kill_server.exe and close the Internet Manager GUI if it is open
-2. Open the config.yaml file in some text editor, Notepad++ is recommended
-3. Change the config file as desired, namely add all Wi-Fi and Ethernet connections you want to shutdown under the ethernet section
-4. Close config.yaml
-5. Launch the internet_server again then the internet_manager
-6. Check to see that the config changes are relfected in the GUI
 
 ### Explaining the UI
 Here's a picture of the Internet Manager GUI with some text to explain what everything means.
@@ -45,9 +36,43 @@ Here's a picture of the Internet Manager GUI with some text to explain what ever
   <img src="./screenshots/internet_manager_explained.png"/>
 </p>
 
+### How to configure the Internet Manager - after v.1.2.0
+1. Run the installer again, modify the fields
+
+### How to configure the Internet Manager - before v.1.1.0
+1. Run the kill_server.exe and close the Internet Manager GUI if it is open
+2. Open the config.yaml file in some text editor, Notepad++ is recommended
+3. Change the config file as desired, namely add all Wi-Fi and Ethernet connections you want to shutdown under the ethernet section
+4. Close config.yaml
+5. Launch the internet_server again then the internet_manager
+6. Check to see that the config changes are relfected in the GUI
+
+### FAQs
+**How do I re-configure the manager?** \
+&nbsp;&nbsp;&nbsp; Reinstall the manager using the installer or modify the config.json file. The installer actually reads your config file if it exists, so you won't need to re-enter any data.
+    
+**How do loot boxes drop?** \
+&nbsp;&nbsp;&nbsp; There are two types of loot boxes, one drops at shutdown, one if you turn off your computer before shutdown.
+    
+**How do I use vouchers?** \
+&nbsp;&nbsp;&nbsp; Right click on the configured times.
+    
+**How do I use my stored loot boxes?** \
+&nbsp;&nbsp;&nbsp; Click on the loot box icon 
+    
+**My internet isn't shutting off, why?** \
+&nbsp;&nbsp;&nbsp; Most likely your networks aren't configured correctly, find your network name and add it to then config when you re-configure it.
+    
+**If I reinstall, will I lose my streak?** \
+&nbsp;&nbsp;&nbsp; No if you reinstall or upgrade, your streak is safe. That data is in the storage.json file, feel free to make an extra copy.
+    
+**What if none of these address my question?** \
+&nbsp;&nbsp;&nbsp; If that doesn't work, email support@dalichro.me
+
 ### Future Changes
-1. Add more instructions to the info menu
-2. Add a live configuration menu, so that it doesn't need to be configured via manual editting of config.yaml
-3. Automatically detect networks to diasable, add them to the config.yaml
+1. Automatically detect networks to diasable, add them to the config.yaml
+2. Add more hand holding so that people don't mess up their configs
+3. Add online licensing, just for fun
+4. Get microsoft to think its not malware
 
 Hope you enjoy it and let me know if you want any new features or have any issues
