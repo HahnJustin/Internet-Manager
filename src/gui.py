@@ -18,7 +18,7 @@ from libuniversal import Actions, ConfigKey, StorageKey, Paths, MessageKey
 from customtkinter import CTkButton, CTkFont
 from colour import Color
 from datetime import datetime, timedelta
-from PIL import Image
+from PIL import Image, ImageTk
 
 SOFTWARE_VERSION_V_LESS = '1.2.1'
 SOFTWARE_VERSION = "v" + SOFTWARE_VERSION_V_LESS
@@ -37,6 +37,28 @@ VOUCHED_COLOR = '#1f61a3'
 FULL_COLOR = '#2d74bc'
 
 SECONDARY_COLOR = '#2d3542'
+
+WATERMARK_PATH = Paths.ASSETS_FOLDER + "/watermark.png"
+WATERMARK_OPACITY = 0.10     # 0..1 (try 0.06–0.15)
+WATERMARK_REL_SIZE = 0.70    # fraction of min(window_w, window_h)
+
+watermark_parent = None
+watermark_label = None
+watermark_base_img = None
+watermark_img_ref = None
+watermark_after_id = None
+
+LOOT_FONT = ("Arial", 12)     # or ("Cloister Black", 18)
+
+loot_img_tk = None
+loot_item = None
+loot_text_item = None
+loot_idle_text = ""
+
+# -------- Canvas loot UI state --------
+canvas_img_cache = {}          # cache PhotoImage objects so clicks don't stutter
+loot_state = "hidden"          # "hidden" | "idle" | "opening" | "opened"
+loot_click_enabled = False
 
 internet_on = True
 loot_box_openable = True
@@ -190,7 +212,8 @@ def every(delay, task):
 
 def create_request(action, value):
     if action in (Actions.SEARCH, Actions.USED_VOUCHER, Actions.UNUSED_VOUCHER,
-                  Actions.LOOT_OPEN, Actions.LOOT_CHECK):
+              Actions.LOOT_OPEN, Actions.LOOT_CHECK,
+              Actions.GET_LOOT, Actions.NEW_LOOT):
         return dict(
             type="text/json",
             encoding="utf-8",
@@ -364,19 +387,14 @@ def get_datetime():
     time = now.strftime(time_format)
     return date, time
 
-def show_status(status : str, positive : bool):
+def show_status(status: str, positive: bool):
     global status_timer
-    global internet_box_button
 
     if not positive:
         status_label.configure(text=status, image=get_image(Paths.ASSETS_FOLDER + "/red_ribbon.png"))
     else:
         status_label.configure(text=status, image=get_image(Paths.ASSETS_FOLDER + "/blue_ribbon.png"))
     status_label.pack()
-
-    if internet_box_button is not None and internet_box_button.winfo_ismapped():
-        internet_box_button.pack_forget()
-        internet_box_button.pack(fill="both", expand=True, padx=20, pady=20)
 
     if status_timer is not None:
         status_timer.cancel()
@@ -676,43 +694,60 @@ def toggle_relapse_button(on : bool):
         relapse_button.pack_forget()
 
 def loot_box():
-    global box_consumed
+    global box_consumed, loot_state, loot_click_enabled, loot_img_tk
+
+    if loot_state != "idle" or not loot_click_enabled:
+        return
+
+    loot_click_enabled = False
     box_consumed = True
+    loot_state = "opening"
 
-    internet_box_button.unbind("<Enter>")
-    internet_box_button.unbind("<Leave>")
-    internet_box_button.configure(text="You opened the box...", state="disabled")
+    # show opening immediately
+    open_path = Paths.ASSETS_FOLDER + ("/internet_box_open.png"
+                                      if current_lootbox == MessageKey.NORMAL_LOOT_BOX
+                                      else "/shutdown_internet_box_open.png")
 
-    if current_lootbox == MessageKey.NORMAL_LOOT_BOX:
-        internet_box_button.configure(image=get_image(Paths.ASSETS_FOLDER + "/internet_box_open.png"))
-    else:
-        internet_box_button.configure(image=get_image(Paths.ASSETS_FOLDER + "/shutdown_internet_box_open.png"))
+    loot_img_tk = get_canvas_photo(open_path)
+    center_canvas.itemconfigure(loot_item, image=loot_img_tk)
+    center_canvas.itemconfigure(loot_text_item, text="You opened the box...")
 
     delay_ms = random.randint(2, 10) * 1000
-    app.after(delay_ms, get_loot)
+    if box_origin == "debug":
+        app.after(delay_ms, debug_get_loot_result)
+    else:
+        app.after(delay_ms, get_loot)
+
 
 def get_loot():
     def on_opened(result):
         if isinstance(result, Exception):
-            internet_box_button.configure(text="Server error opening box :(")
+            center_canvas.itemconfigure(loot_text_item, text="Server error opening box :(")
+            # allow it to auto-hide normally
+            global hide_after_id
+            if hide_after_id is not None:
+                app.after_cancel(hide_after_id)
+            hide_after_id = app.after(60_000, hide_loot_box)
             return
 
         voucher_amount = int(result or 0)
 
+        global loot_state, loot_img_tk
+
         if voucher_amount <= 0:
-            internet_box_button.configure(text="There was nothing inside :(")
+            center_canvas.itemconfigure(loot_text_item, text="There was nothing inside :(")
         elif local_vouchers + voucher_amount + local_vouchers_used <= voucher_limit:
-            internet_box_button.configure(text="You found a voucher!!!",
-                                          image=get_image(Paths.ASSETS_FOLDER + "/voucher.png"))
-            # NOTE: only do this if your server does NOT already add the voucher.
-            # local_vouchers += voucher_amount
-            # update_voucher_label()
+            center_canvas.itemconfigure(loot_text_item, text="You found a voucher!!!")
+            loot_img_tk = get_canvas_photo(Paths.ASSETS_FOLDER + "/voucher.png")
+            center_canvas.itemconfigure(loot_item, image=loot_img_tk)
         else:
-            internet_box_button.configure(text="You found a voucher, but don't have room...",
-                                          image=get_image(Paths.ASSETS_FOLDER + "/voucher.png"))
+            center_canvas.itemconfigure(loot_text_item, text="You found a voucher, but don't have room...")
+            loot_img_tk = get_canvas_photo(Paths.ASSETS_FOLDER + "/voucher.png")
+            center_canvas.itemconfigure(loot_item, image=loot_img_tk)
+
+        loot_state = "opened"
 
         # Auto-hide in 60s (but since box_consumed=True, it will NOT be stored)
-        global hide_after_id
         if hide_after_id is not None:
             app.after_cancel(hide_after_id)
         hide_after_id = app.after(60_000, hide_loot_box)
@@ -722,28 +757,30 @@ def get_loot():
 
 def hide_loot_box():
     global loot_box_openable, box_origin, box_consumed, hide_after_id
+    global loot_state, loot_click_enabled
 
     if hide_after_id is not None:
         app.after_cancel(hide_after_id)
         hide_after_id = None
 
-    if internet_box_button.winfo_ismapped():
-        internet_box_button.pack_forget()
+    if loot_item is not None:
+        center_canvas.itemconfigure(loot_item, state="hidden")
+        center_canvas.itemconfigure(loot_text_item, state="hidden")
 
     loot_box_openable = True
     box_origin = None
     box_consumed = False
 
+    loot_state = "hidden"
+    loot_click_enabled = False
+    center_canvas.configure(cursor="")
+
     refresh_loot_count_async()
 
 def show_loot_box(origin: str, found_count: int = 0):
-    """
-    origin: "storage" or "found"
-    found_count: how many were found in the recent event (for text only)
-    """
     global loot_box_openable, box_origin, box_consumed, hide_after_id
+    global current_lootbox, loot_img_tk, loot_idle_text
 
-    # Already showing: don't swap the box; just bail
     if not loot_box_openable:
         return
 
@@ -751,45 +788,118 @@ def show_loot_box(origin: str, found_count: int = 0):
     box_consumed = False
     loot_box_openable = False
 
-    idle_text = "You pulled a box out of storage"
+    loot_idle_text = "You pulled a box out of storage"
     if found_count > 1:
-        idle_text = f"You found {found_count} internet boxes!"
+        loot_idle_text = f"You found {found_count} internet boxes!"
     elif found_count == 1:
-        idle_text = "You found an internet box!"
+        loot_idle_text = "You found an internet box!"
 
-    # Get the type/image from server (async)
     def on_type(result):
-        nonlocal idle_text
         if isinstance(result, Exception):
             show_status("Server error getting loot box", False)
             hide_loot_box()
             return
 
-        # result should be MessageKey.NORMAL_LOOT_BOX / SHUTDOWN_LOOT_BOX / NO_LOOT_BOX
-        global current_lootbox
+        global current_lootbox, loot_img_tk, loot_idle_text, hide_after_id, loot_state, loot_click_enabled
         current_lootbox = result
+
         if current_lootbox == MessageKey.NO_LOOT_BOX:
             hide_loot_box()
             return
 
-        if current_lootbox == MessageKey.NORMAL_LOOT_BOX:
-            internet_box_button.configure(image=get_image(Paths.ASSETS_FOLDER + "/internet_box.png"))
-        else:
-            internet_box_button.configure(image=get_image(Paths.ASSETS_FOLDER + "/shutdown_internet_box.png"))
+        _ensure_loot_canvas_items()
 
-        internet_box_button.configure(text=idle_text, state="enabled")
-        internet_box_button.pack(fill="both", expand=True, padx=20, pady=20)
-        internet_box_button.bind("<Enter>", lambda e: internet_box_button.configure(text="Click to open!"))
-        internet_box_button.bind("<Leave>", lambda e: internet_box_button.configure(text=idle_text))
+        img_path = Paths.ASSETS_FOLDER + ("/internet_box.png"
+                                         if current_lootbox == MessageKey.NORMAL_LOOT_BOX
+                                         else "/shutdown_internet_box.png")
 
-        # Auto-hide -> store if unopened
-        global hide_after_id
+        loot_img_tk = get_canvas_photo(img_path)
+        center_canvas.itemconfigure(loot_item, image=loot_img_tk, state="normal")
+        center_canvas.itemconfigure(loot_text_item, text=loot_idle_text, state="normal")
+
+        loot_state = "idle"
+        loot_click_enabled = True
+
+        _recenter_center_canvas()
+
         if hide_after_id is not None:
             app.after_cancel(hide_after_id)
         hide_after_id = app.after(60_000, hide_loot_box)
+
+
         refresh_loot_count_async()
 
     do_request_async(Actions.GET_LOOT, "", on_type)
+
+def debug_show_loot_box(found_count: int = 1):
+    """
+    DEBUG: Force-render a loot box on the canvas even if the server has none.
+    Click -> open animation -> simulated voucher result.
+    """
+    global loot_box_openable, box_origin, box_consumed, hide_after_id
+    global current_lootbox, loot_img_tk, loot_idle_text, loot_state, loot_click_enabled
+
+    if not loot_box_openable:
+        return
+
+    box_origin = "debug"
+    box_consumed = False
+    loot_box_openable = False
+
+    current_lootbox = MessageKey.NORMAL_LOOT_BOX  # pick a normal box type for visuals
+
+    loot_idle_text = "(DEBUG) Click to open!"
+    if found_count > 1:
+        loot_idle_text = f"(DEBUG) You found {found_count} internet boxes!\nClick to open!"
+    elif found_count == 1:
+        loot_idle_text = "(DEBUG) You found an internet box!\nClick to open!"
+
+    _ensure_loot_canvas_items()
+
+    img_path = Paths.ASSETS_FOLDER + "/internet_box.png"
+    loot_img_tk = get_canvas_photo(img_path)
+
+    center_canvas.itemconfigure(loot_item, image=loot_img_tk, state="normal")
+    center_canvas.itemconfigure(loot_text_item, text=loot_idle_text, state="normal")
+
+    loot_state = "idle"
+    loot_click_enabled = True
+
+    _recenter_center_canvas()
+
+    if hide_after_id is not None:
+        app.after_cancel(hide_after_id)
+    hide_after_id = app.after(60_000, hide_loot_box)
+
+
+def debug_get_loot_result():
+    """
+    DEBUG: fake voucher results so the whole flow works without server.
+    """
+    global loot_state, loot_img_tk, hide_after_id
+
+    # 60% chance voucher, 40% nothing (tweak to taste)
+    voucher_amount = 1 if random.random() < 0.60 else 0
+
+    if voucher_amount <= 0:
+        center_canvas.itemconfigure(loot_text_item, text="There was nothing inside :(")
+    elif local_vouchers + voucher_amount + local_vouchers_used <= voucher_limit:
+        center_canvas.itemconfigure(loot_text_item, text="You found a voucher!!!")
+        loot_img_tk = get_canvas_photo(Paths.ASSETS_FOLDER + "/voucher.png")
+        center_canvas.itemconfigure(loot_item, image=loot_img_tk)
+    else:
+        center_canvas.itemconfigure(loot_text_item, text="You found a voucher, but don't have room...")
+        loot_img_tk = get_canvas_photo(Paths.ASSETS_FOLDER + "/voucher.png")
+        center_canvas.itemconfigure(loot_item, image=loot_img_tk)
+
+    loot_state = "opened"
+
+    if hide_after_id is not None:
+        app.after_cancel(hide_after_id)
+    hide_after_id = app.after(60_000, hide_loot_box)
+
+    _recenter_center_canvas()
+
 
 def pull_box_from_storage():
     global local_loot_boxes
@@ -813,10 +923,11 @@ def check_new_loot():
 
         if loot_box_openable:
             show_loot_box("found", found_count=new_amount)
-        else:
-            internet_box_button.configure(
-                text=f"{internet_box_button.cget('text')}\n(+{new_amount} stored)"
-            )
+        elif loot_visible():
+                center_canvas.itemconfigure(
+                    loot_text_item,
+                    text=f"{loot_idle_text}\n(+{new_amount} stored)"
+                )
 
         refresh_loot_count_async()
 
@@ -979,6 +1090,115 @@ def register_font(font_path):
             print("Font added successfully.")
         # Notify system about the font change
         #ctypes.windll.user32.SendMessageW(0xFFFF, 0x001D, 0, 0)
+
+def _apply_opacity_rgba(img: Image.Image, opacity: float) -> Image.Image:
+    img = img.convert("RGBA")
+    r, g, b, a = img.split()
+    a = a.point(lambda p: int(p * opacity))
+    img.putalpha(a)
+    return img
+
+def init_watermark_canvas(canvas: tkinter.Canvas):
+    global watermark_parent, watermark_base_img, watermark_tk, watermark_item
+    watermark_parent = canvas
+
+    p = resource_path(WATERMARK_PATH)
+    watermark_base_img = _apply_opacity_rgba(Image.open(p).convert("RGBA"), WATERMARK_OPACITY)
+
+    # native size (no scaling)
+    watermark_tk = ImageTk.PhotoImage(watermark_base_img)
+
+    watermark_item = canvas.create_image(0, 0, image=watermark_tk, anchor="center")
+    _recenter_center_canvas()  # initial position
+
+def get_canvas_photo(asset_rel_path: str) -> ImageTk.PhotoImage:
+    """Loads once; returns cached PhotoImage for canvas use."""
+    global canvas_img_cache
+    full = resource_path(asset_rel_path)
+    img = canvas_img_cache.get(full)
+    if img is None:
+        pil = Image.open(full).convert("RGBA")
+        img = ImageTk.PhotoImage(pil)
+        canvas_img_cache[full] = img
+    return img
+
+def loot_visible() -> bool:
+    return loot_item is not None and center_canvas.itemcget(loot_item, "state") != "hidden"
+
+def _recenter_center_canvas(event=None):
+    w = center_canvas.winfo_width()
+    h = center_canvas.winfo_height()
+    if w < 2 or h < 2:
+        return
+
+    if watermark_item is not None:
+        center_canvas.coords(watermark_item, w / 2, h / 2)
+
+    if loot_item is not None:
+        center_canvas.coords(loot_item, w / 2, h / 2)
+
+        # Place text just ABOVE the box image (no more hardcoded -140)
+        img_h = 280
+        try:
+            if loot_img_tk is not None:
+                img_h = loot_img_tk.height()
+        except Exception:
+            pass
+
+        text_y = (h / 2) - (img_h / 2) - 10  # 10px gap above image
+        center_canvas.coords(loot_text_item, w / 2, text_y)
+
+def update_watermark():
+    global watermark_img_ref, watermark_after_id
+    watermark_after_id = None
+
+    if watermark_label is None or watermark_base_img is None or watermark_parent is None:
+        return
+
+    w, h = watermark_parent.winfo_width(), watermark_parent.winfo_height()
+    if w < 20 or h < 20:
+        return
+
+    target = int(min(w, h) * WATERMARK_REL_SIZE)
+
+    img = _apply_opacity_rgba(watermark_base_img, WATERMARK_OPACITY).copy()
+    img.thumbnail((target, target), Image.Resampling.LANCZOS)
+
+    watermark_img_ref = customtkinter.CTkImage(img, size=(img.width, img.height))
+    watermark_label.configure(image=watermark_img_ref)
+
+def _ensure_loot_canvas_items():
+    global loot_item, loot_text_item
+    if loot_item is not None:
+        return
+
+    loot_item = center_canvas.create_image(0, 0, anchor="center", state="hidden", tags=("loot",))
+    loot_text_item = center_canvas.create_text(
+        0, 0,
+        text="",
+        fill="white",
+        font=LOOT_FONT,
+        anchor="s",          # IMPORTANT: pairs with recenter math (text_y is the baseline)
+        state="hidden",
+        tags=("loot",)
+    )
+
+    def on_click(_e=None):
+        loot_box()
+
+    def on_enter(_e=None):
+        if loot_state == "idle":
+            center_canvas.configure(cursor="hand2")
+            center_canvas.itemconfigure(loot_text_item, text="Click to open!")
+
+    def on_leave(_e=None):
+        center_canvas.configure(cursor="")
+        if loot_state == "idle":
+            center_canvas.itemconfigure(loot_text_item, text=loot_idle_text)
+
+    center_canvas.tag_bind("loot", "<Button-1>", on_click)
+    center_canvas.tag_bind("loot", "<Enter>", on_enter)
+    center_canvas.tag_bind("loot", "<Leave>", on_leave)
 
 def schedule_update_gui():
     update_gui()
@@ -1204,13 +1424,20 @@ if ConfigKey.DEBUG in cfg and cfg[ConfigKey.DEBUG]:
                             command = lambda : toggle_globe_animation(True))  
     test_gif_on.pack(side='right', anchor='w', expand=False)
     
-    test_loot_box = CTkButton(debug_frame, text = 'Test Lootbox',
-                            command=lambda: show_loot_box("found", found_count=1)) 
+    test_loot_box = CTkButton(debug_frame, text='Test Lootbox',
+                            command=lambda: debug_show_loot_box(found_count=1))
     test_loot_box.pack(side='right', anchor='w', expand=False)
 
 
 extra_bottom_frame = customtkinter.CTkFrame(app, height = 36, fg_color='#25292e', corner_radius=0)
 extra_bottom_frame.pack(side='bottom', fill="x")
+
+# Center (main) area: use Canvas so background + watermark are real pixels
+center_canvas = tkinter.Canvas(app, bg=app_bg_color, highlightthickness=0, bd=0)
+center_canvas.pack(side="top", fill="both", expand=True)
+
+init_watermark_canvas(center_canvas)
+center_canvas.bind("<Configure>", _recenter_center_canvas)
 
 manual_icon = customtkinter.CTkLabel(extra_bottom_frame, text="", image=get_image(Paths.ASSETS_FOLDER + "/embarrased_globe.png"))
 toggle_manual_icon(used_manual_override)
@@ -1248,17 +1475,6 @@ loot_button = customtkinter.CTkButton(bottom_left_frame, text=f"x{local_loot_box
                                         command= lambda : pull_box_from_storage())
 loot_button.pack(side='right', anchor='e', expand=True)
 update_loot_button()
-
-internet_box_button = CTkButton(app, text = 'You found an internet box!',
-                        hover_color='#1b1d21',
-                        fg_color= app_bg_color,
-                        image=get_image(Paths.ASSETS_FOLDER + "/internet_box.png"),
-                        compound="top",
-                        anchor='center', 
-                        corner_radius=0, 
-                        hover= True,
-                        command= loot_box,
-                        text_color_disabled="white")
 
 check_new_loot()
 refresh_loot_count_async()

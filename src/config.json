@@ -9,5 +9,6 @@
   "streak_shift": "4:00",
   "military_time": false,
   "sound_on": true,
-  "warning_minutes": 15
+  "warning_minutes": 15,
+  "debug": true
 }
