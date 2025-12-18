@@ -20,7 +20,7 @@ from colour import Color
 from datetime import datetime, timedelta
 from PIL import Image
 
-SOFTWARE_VERSION_V_LESS = '1.2.0'
+SOFTWARE_VERSION_V_LESS = '1.2.1'
 SOFTWARE_VERSION = "v" + SOFTWARE_VERSION_V_LESS
 
 COLOR_AMOUNT = 100
@@ -41,6 +41,9 @@ SECONDARY_COLOR = '#2d3542'
 internet_on = True
 loot_box_openable = True
 globe_on = True
+box_origin = None        # None | "storage" | "found"
+box_consumed = False     # set True when user opens it
+hide_after_id = None     # app.after id so we can cancel
 
 admin_on = True
 stop_gifs = False
@@ -92,7 +95,7 @@ class time_action_data():
             self.make_vouched()
             local_vouchers_used += 1
             local_vouchers -= 1
-            do_request(Actions.USED_VOUCHER, str(self))
+            do_request_async(Actions.USED_VOUCHER, str(self))
         elif self.vouched:
             for i in range(index,len(time_action_buttons)):
                 button = time_action_buttons[i] 
@@ -100,7 +103,7 @@ class time_action_data():
                     button.make_unvouched()
                     local_vouchers += 1
                     local_vouchers_used -= 1
-                    do_request(Actions.UNUSED_VOUCHER, str(button))
+                    do_request_async(Actions.UNUSED_VOUCHER, str(button))
         update_voucher_label()
 
         if index == 0:
@@ -186,23 +189,25 @@ def every(delay, task):
         next_time += (time.time() - next_time) // delay * delay + delay
 
 def create_request(action, value):
-    if( action == Actions.SEARCH or Actions.USED_VOUCHER or Actions.UNUSED_VOUCHER or
-        action == Actions.LOOT_OPEN or action == Actions.LOOT_CHECK):
+    if action in (Actions.SEARCH, Actions.USED_VOUCHER, Actions.UNUSED_VOUCHER,
+                  Actions.LOOT_OPEN, Actions.LOOT_CHECK):
         return dict(
             type="text/json",
             encoding="utf-8",
             content=dict(action=action, value=value),
         )
-    elif( action == Actions.INTERNET_ON or action == Actions.INTERNET_OFF or 
-          action == Actions.GRAB_CONFIG or action == Actions.ADMIN_STATUS or
-          action == Actions.INTERNET_STATUS or action == Actions.GRAB_STORAGE or
-          action == Actions.RELAPSE or action == Actions.ADD_VOUCHER or 
-          action == Actions.KILL_SERVER):
+
+    elif action in (Actions.INTERNET_ON, Actions.INTERNET_OFF,
+                    Actions.GRAB_CONFIG, Actions.ADMIN_STATUS,
+                    Actions.INTERNET_STATUS, Actions.GRAB_STORAGE,
+                    Actions.RELAPSE, Actions.ADD_VOUCHER,
+                    Actions.KILL_SERVER):
         return dict(
             type="text/json",
             encoding="utf-8",
             content=dict(action=action),
         )
+
     else:
         return dict(
             type="binary/custom-client-binary-type",
@@ -210,43 +215,52 @@ def create_request(action, value):
             content=bytes(action + value, encoding="utf-8"),
         )
 
-def start_connection(host, port, request):
+def start_connection(sel, host, port, request):
     addr = (host, port)
-    print(f"Starting connection to {addr}")
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setblocking(False)
     sock.connect_ex(addr)
     events = selectors.EVENT_READ | selectors.EVENT_WRITE
     message = libclient.Message(sel, sock, addr, request)
     sel.register(sock, events, data=message)
+    return message
 
-def do_request(action, value) -> str:
-    global sel
-
+def do_request(action, value):
     request = create_request(action, value)
-    start_connection(host, port, request)
 
+    sel = selectors.DefaultSelector()
     try:
+        msg = start_connection(sel, host, port, request)
+
         while True:
-            message = None
             events = sel.select(timeout=1)
-            print(f"Events {events}")
             for key, mask in events:
                 message = key.data
-                try:
-                    print("Processing Message")
-                    message.process_events(mask)
-                except Exception:
-                    print(
-                        f"Main: Error: Exception for {message.addr}:\n"
-                        f"{traceback.format_exc()}"
-                    )
-                    message.close()
-            # Check for a socket being monitored to continue.
+                message.process_events(mask)
+
             if not sel.get_map():
-                return message.result
-    except KeyboardInterrupt:
-        print("Caught keyboard interrupt, exiting")
+                return msg.result
+    finally:
+        sel.close()
+
+def do_request_async(action, value, on_done):
+    def worker():
+        result = do_request(action, value)
+        app.after(0, lambda: on_done(result))
+    threading.Thread(target=worker, daemon=True).start()
+
+def do_request_async(action, value="", on_done=None):
+    if on_done is None:
+        on_done = lambda _res: None
+
+    def worker():
+        try:
+            result = do_request(action, value)
+        except Exception as e:
+            result = e
+        app.after(0, lambda: on_done(result))
+
+    threading.Thread(target=worker, daemon=True).start()
 
 def clamp(n, smallest, largest): return max(smallest, min(n, largest))
 
@@ -615,7 +629,7 @@ def relapse(top : customtkinter.CTkToplevel):
     top.destroy()
     streak = 0
     show_status("User succumbed to temptation", True)
-    do_request(Actions.RELAPSE, "")
+    do_request_async(Actions.RELAPSE, "")
 
     used_manual_override = True
     json_data[StorageKey.SINCE_LAST_RELAPSE] = datetime.strftime(datetime.now(), '%m/%d/%y %H:%M:%S')
@@ -682,59 +696,157 @@ def toggle_loot_box(show_box : bool, new_loot_amount = 0):
         loot_box_openable = True
 
 def loot_box():
-    global current_lootbox
+    global box_consumed
+    box_consumed = True
 
     internet_box_button.unbind("<Enter>")
     internet_box_button.unbind("<Leave>")
-    internet_box_button.configure(text='You opened the box...', state="disabled")
+    internet_box_button.configure(text="You opened the box...", state="disabled")
 
     if current_lootbox == MessageKey.NORMAL_LOOT_BOX:
-            internet_box_button.configure(image=get_image(Paths.ASSETS_FOLDER + "/internet_box_open.png")) 
-    elif current_lootbox == MessageKey.SHUTDOWN_LOOT_BOX:
-            internet_box_button.configure(image=get_image(Paths.ASSETS_FOLDER + "/shutdown_internet_box_open.png")) 
+        internet_box_button.configure(image=get_image(Paths.ASSETS_FOLDER + "/internet_box_open.png"))
+    else:
+        internet_box_button.configure(image=get_image(Paths.ASSETS_FOLDER + "/shutdown_internet_box_open.png"))
 
-    thread = threading.Timer(random.randint(2, 10), get_loot)
-    thread.daemon = True
-    thread.start()
+    delay_ms = random.randint(2, 10) * 1000
+    app.after(delay_ms, get_loot)
 
 def get_loot():
-    global local_vouchers
-    global loot_box_openable
-    global lootbox_timer
-    global current_lootbox
-    global local_vouchers_used
+    def on_opened(result):
+        if isinstance(result, Exception):
+            internet_box_button.configure(text="Server error opening box :(")
+            return
 
-    voucher_amount = do_request(Actions.LOOT_OPEN, current_lootbox)
+        voucher_amount = int(result or 0)
 
-    if voucher_amount <= 0:
-        internet_box_button.configure(text='There was nothing inside :(')
-    elif local_vouchers + voucher_amount + local_vouchers_used <= voucher_limit:
-        internet_box_button.configure(text='You found a voucher!!!', image=get_image(Paths.ASSETS_FOLDER + "\\voucher.png"))
-        local_vouchers += 1
-        update_voucher_label()
-        do_request(Actions.ADD_VOUCHER, "")
-    else:
-        internet_box_button.configure(text="You found a voucher, but don't have room... ", image=get_image(Paths.ASSETS_FOLDER + "\\voucher.png"))
-    
-    current_lootbox = MessageKey.NO_LOOT_BOX
+        if voucher_amount <= 0:
+            internet_box_button.configure(text="There was nothing inside :(")
+        elif local_vouchers + voucher_amount + local_vouchers_used <= voucher_limit:
+            internet_box_button.configure(text="You found a voucher!!!",
+                                          image=get_image(Paths.ASSETS_FOLDER + "/voucher.png"))
+            # NOTE: only do this if your server does NOT already add the voucher.
+            # local_vouchers += voucher_amount
+            # update_voucher_label()
+        else:
+            internet_box_button.configure(text="You found a voucher, but don't have room...",
+                                          image=get_image(Paths.ASSETS_FOLDER + "/voucher.png"))
+
+        # Auto-hide in 60s (but since box_consumed=True, it will NOT be stored)
+        global hide_after_id
+        if hide_after_id is not None:
+            app.after_cancel(hide_after_id)
+        hide_after_id = app.after(60_000, hide_loot_box)
+
+    do_request_async(Actions.LOOT_OPEN, current_lootbox, on_opened)
+
+def hide_loot_box():
+    global loot_box_openable, box_origin, box_consumed, local_loot_boxes, hide_after_id
+
+    if hide_after_id is not None:
+        app.after_cancel(hide_after_id)
+        hide_after_id = None
+
+    if internet_box_button.winfo_ismapped():
+        internet_box_button.pack_forget()
+
+    # If it wasn't opened, it goes to storage (regardless of origin)
+    if box_origin is not None and not box_consumed:
+        local_loot_boxes = min(loot_limit, local_loot_boxes + 1)
+        update_loot_button()
+
     loot_box_openable = True
-    if lootbox_timer != None: lootbox_timer.cancel()
-    lootbox_timer = run_function_in_minute(lambda : toggle_loot_box(False))
+    box_origin = None
+    box_consumed = False
+
+def show_loot_box(origin: str, found_count: int = 0):
+    """
+    origin: "storage" or "found"
+    found_count: how many were found in the recent event (for text only)
+    """
+    global loot_box_openable, box_origin, box_consumed, hide_after_id
+
+    # Already showing: don't swap the box; just bail
+    if not loot_box_openable:
+        return
+
+    box_origin = origin
+    box_consumed = False
+    loot_box_openable = False
+
+    idle_text = "You pulled a box out of storage"
+    if found_count > 1:
+        idle_text = f"You found {found_count} internet boxes!"
+    elif found_count == 1:
+        idle_text = "You found an internet box!"
+
+    # Get the type/image from server (async)
+    def on_type(result):
+        nonlocal idle_text
+        if isinstance(result, Exception):
+            show_status("Server error getting loot box", False)
+            hide_loot_box()
+            return
+
+        # result should be MessageKey.NORMAL_LOOT_BOX / SHUTDOWN_LOOT_BOX / NO_LOOT_BOX
+        global current_lootbox
+        current_lootbox = result
+        if current_lootbox == MessageKey.NO_LOOT_BOX:
+            hide_loot_box()
+            return
+
+        if current_lootbox == MessageKey.NORMAL_LOOT_BOX:
+            internet_box_button.configure(image=get_image(Paths.ASSETS_FOLDER + "/internet_box.png"))
+        else:
+            internet_box_button.configure(image=get_image(Paths.ASSETS_FOLDER + "/shutdown_internet_box.png"))
+
+        internet_box_button.configure(text=idle_text, state="enabled")
+        internet_box_button.pack(fill="both", expand=True, padx=20, pady=20)
+        internet_box_button.bind("<Enter>", lambda e: internet_box_button.configure(text="Click to open!"))
+        internet_box_button.bind("<Leave>", lambda e: internet_box_button.configure(text=idle_text))
+
+        # Auto-hide -> store if unopened
+        global hide_after_id
+        if hide_after_id is not None:
+            app.after_cancel(hide_after_id)
+        hide_after_id = app.after(60_000, hide_loot_box)
+
+    do_request_async(Actions.GET_LOOT, "", on_type)
+
+def pull_box_from_storage():
+    global local_loot_boxes
+    if not loot_box_openable:
+        return
+    if local_loot_boxes <= 0:
+        return
+    local_loot_boxes -= 1
+    update_loot_button()
+    show_loot_box("storage")
 
 def check_new_loot():
-    global lootbox_timer
-    global local_loot_boxes
-    global loot_limit
-    global loot_box_openable
+    def on_new_amount(result):
+        if isinstance(result, Exception):
+            return
 
-    new_loot_amount = do_request(Actions.NEW_LOOT, "")
+        new_amount = int(result or 0)
+        if new_amount <= 0:
+            return
 
-    limit_offset = 0
-    if not loot_box_openable: limit_offset += 1
-    has_new_loot = new_loot_amount > 0 and (local_loot_boxes <= loot_limit - limit_offset)
-    
-    if has_new_loot: 
-        toggle_loot_box(True, new_loot_amount)
+        global local_loot_boxes
+
+        if loot_box_openable:
+            # Hold 1 on screen, put the rest into storage
+            to_storage = max(0, new_amount - 1)
+            local_loot_boxes = min(loot_limit, local_loot_boxes + to_storage)
+            update_loot_button()
+            show_loot_box("found", found_count=new_amount)
+        else:
+            # Box already on screen -> all new ones go to storage
+            local_loot_boxes = min(loot_limit, local_loot_boxes + new_amount)
+            update_loot_button()
+            # (Optional) small UX note:
+            internet_box_button.configure(text=f"{internet_box_button.cget('text')}\n(+{new_amount} stored)")
+
+    do_request_async(Actions.NEW_LOOT, "", on_new_amount)
 
 def toggle_globe_animation(enabled : bool):
     global globe_frames
@@ -893,6 +1005,14 @@ def register_font(font_path):
             print("Font added successfully.")
         # Notify system about the font change
         #ctypes.windll.user32.SendMessageW(0xFFFF, 0x001D, 0, 0)
+
+def schedule_update_gui():
+    update_gui()
+    app.after(1000, schedule_update_gui)
+
+def schedule_update_button_color():
+    update_button_color()
+    app.after(60_000, schedule_update_button_color)
 
 # no clue why this works, but it allows the taskbar icon to be custom
 myappid = 'dalichrome.internetmanager.' + SOFTWARE_VERSION_V_LESS # arbitrary string
@@ -1092,14 +1212,14 @@ if ConfigKey.DEBUG in cfg and cfg[ConfigKey.DEBUG]:
     debug_frame.pack(side='bottom', fill="x")
 
     turn_off = CTkButton(debug_frame, text = 'Turn off Internet',
-                            command = lambda : do_request(Actions.INTERNET_OFF, "")) 
+                            command = lambda : do_request_async(Actions.INTERNET_OFF, "")) 
     turn_on = CTkButton(debug_frame, text = 'Turn on Internet',
-                            command = lambda : do_request(Actions.INTERNET_ON, ""))  
+                            command = lambda : do_request_async(Actions.INTERNET_ON, ""))  
     turn_off.pack(side = 'left', anchor='e', expand=False)
     turn_on.pack(side='left', anchor='w', expand=False)
 
     add_voucher = CTkButton(debug_frame, text = 'Add Voucher',
-                            command = lambda : do_request(Actions.ADD_VOUCHER, ""))  
+                            command = lambda : do_request_async(Actions.ADD_VOUCHER, ""))  
     add_voucher.pack(side = 'left', anchor='e', expand=False)
 
     test_gif = CTkButton(debug_frame, text = 'Gif Toggle Off',
@@ -1151,7 +1271,7 @@ loot_button = customtkinter.CTkButton(bottom_left_frame, text=f"x{local_loot_box
                                         fg_color= SECONDARY_COLOR,
                                         hover_color=app_bg_color,
                                         corner_radius=0,
-                                        command= lambda : toggle_loot_box(True))
+                                        command= lambda : pull_box_from_storage())
 loot_button.pack(side='right', anchor='e', expand=True)
 update_loot_button()
 
@@ -1181,16 +1301,8 @@ help_icon.pack(anchor='w', expand=True)
 
 
 # Run time update
-update_gui()
-t = threading.Thread(target=lambda: every(1, update_gui))
-t.daemon = True
-t.start()
-
-# Run time update
-update_button_color()
-t = threading.Thread(target=lambda: every(60, update_button_color))
-t.daemon = True
-t.start()
+schedule_update_gui()
+schedule_update_button_color()
 
 # Run app
 app.mainloop()

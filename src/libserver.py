@@ -10,6 +10,7 @@ from libuniversal import Actions, MessageKey
 
 loot_box_gained = 0
 loot_box_timer = None
+_loot_lock = threading.Lock()
 
 class Message:
     def __init__(self, selector, sock, addr):
@@ -136,7 +137,7 @@ class Message:
             lootbox_type = self.request.get("value")
             lootbox_amount = 0
             if lootbox_type == MessageKey.SHUTDOWN_LOOT_BOX:
-                lootbox_amount = configreader.open_shutdown_loot_box()
+                lootbox_amount = configreader.get_shutdown_loot_boxes()
             elif lootbox_type == MessageKey.NORMAL_LOOT_BOX:
                 lootbox_amount = configreader.get_normal_loot_boxes()
             elif lootbox_type == MessageKey.ALL_LOOT_BOXES:
@@ -152,7 +153,11 @@ class Message:
             stop_loot_box_timer()
             content = {MessageKey.RESULT: voucher_amount}
         elif action == Actions.NEW_LOOT:
-            content = {MessageKey.RESULT: loot_box_gained}
+            global loot_box_gained
+            with _loot_lock:
+                amt = loot_box_gained
+                loot_box_gained = 0
+            content = {MessageKey.RESULT: amt}
         elif action == Actions.GET_LOOT:
             key = configreader.get_a_loot_box()
             content = {MessageKey.RESULT: key}
@@ -277,24 +282,27 @@ class Message:
 def start_loot_box_timer(amount : int):
     global loot_box_timer
     global loot_box_gained
+    with _loot_lock:
+        if loot_box_timer != None: loot_box_timer.cancel()
 
-    if loot_box_timer != None: loot_box_timer.cancel()
+        loot_box_gained = amount
 
-    loot_box_gained = amount
+        def reset_loot_box_flag():
+            global loot_box_gained, loot_box_timer
+            with _loot_lock:
+                loot_box_gained = 0
+                loot_box_timer = None
 
-    def reset_loot_box_flag():
-        global loot_box_gained
-        loot_box_gained = 0
-
-    loot_box_timer = threading.Timer(120, reset_loot_box_flag)
-    loot_box_timer.daemon = True
-    loot_box_timer.start()
+        loot_box_timer = threading.Timer(120, reset_loot_box_flag)
+        loot_box_timer.daemon = True
+        loot_box_timer.start()
 
 def stop_loot_box_timer():
     global loot_box_gained
     global loot_box_timer
 
-    if loot_box_timer != None: loot_box_timer.cancel()
+    with _loot_lock:
+        if loot_box_timer != None: loot_box_timer.cancel()
 
-    loot_box_gained = 0
-    loot_box_timer = None
+        loot_box_gained = 0
+        loot_box_timer = None

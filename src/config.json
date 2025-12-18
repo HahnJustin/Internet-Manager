@@ -1,24 +1,13 @@
 {
-    "host": "127.0.0.1",
-    "port": 65432,
-    "shutdown_times": [
-        "23:00:00",
-        "23:30:00",
-        "00:00:00"
-    ],
-    "enforced_shutdown_times": [
-        "01:00:00"
-    ],
-    "up_times": [
-        "05:00:00"
-    ],
-    "streak_shift": "04:00",
-    "networks": [
-        "Ethernet",
-        "Wi-Fi"
-    ],
-    "military_time": false,
-    "sound_on": true,
-    "warning_minutes": 15,
-    "key": "QUoILe1mBQeiw28tuTE4rdt2r4HHgkHuFF0Uru70E68="
+  "host": "127.0.0.1",
+  "port": 65432,
+  "key": "qGo6YYXq2kRbeqekqsyOmY8IyEJGIHUmYDFpkcZzu90=",
+  "shutdown_times": ["22:30:00","23:00:00","23:30:00","23:45:00","23:52:30"],
+  "enforced_shutdown_times": ["0:00:00"],
+  "up_times": ["4:30:00"],
+  "networks": ["Ethernet","Ethernet 2","Wi-Fi"],
+  "streak_shift": "4:00",
+  "military_time": false,
+  "sound_on": true,
+  "warning_minutes": 15
 }

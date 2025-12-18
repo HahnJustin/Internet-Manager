@@ -215,6 +215,7 @@ def play_sfx(sfx : str):
         except:
             playsound(resource_path(Paths.SFX_FOLDER + '\\' + sfx))
 
+
 if not pyuac.isUserAdmin():
    print("Re-launching as admin!")
    pyuac.runAsAdmin()
@@ -225,7 +226,7 @@ if getattr(sys, 'frozen', False):
     application_path = os.path.dirname(sys.executable)
 else:
     application_path = os.path.dirname(os.path.abspath(__file__))
-configreader.set_application_path(application_path)
+configreader.init(application_path)
 
 # Defining basic time variables
 now = datetime.now()
