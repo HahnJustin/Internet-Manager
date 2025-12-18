@@ -1,12 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 a = Analysis(
-    ['gui.py'],
+    ['server.py'],
     pathex=[],
     binaries=[],
     datas=[
-        ('assets/*', 'assets'),
-        ('fonts/*', 'fonts')
+        ('assets/*', 'assets')
     ],
     hiddenimports=[],
     hookspath=[],
@@ -23,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='internet_manager.exe',
+    name='internet_manager_server',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -36,5 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='assets/globe.ico'
+    icon='assets/globe_server.ico'
 )

@@ -1,11 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-
 a = Analysis(
     ['gui.py'],
     pathex=[],
     binaries=[],
-    datas=[( 'assets/*', 'assets' )],
+    datas=[
+        ('assets/*', 'assets'),
+        ('fonts/*', 'fonts')
+    ],
     hiddenimports=[],
     hookspath=[],
     runtime_hooks=[],
@@ -20,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='internet_manager.exe',
+    name='internet_manager',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

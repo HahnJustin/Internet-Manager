@@ -18,7 +18,7 @@ from libuniversal import Actions, ConfigKey, StorageKey, Paths, MessageKey
 from customtkinter import CTkButton, CTkFont
 from colour import Color
 from datetime import datetime, timedelta
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageDraw
 
 SOFTWARE_VERSION_V_LESS = '1.2.1'
 SOFTWARE_VERSION = "v" + SOFTWARE_VERSION_V_LESS
@@ -39,14 +39,22 @@ FULL_COLOR = '#2d74bc'
 SECONDARY_COLOR = '#2d3542'
 
 WATERMARK_PATH = Paths.ASSETS_FOLDER + "/watermark.png"
-WATERMARK_OPACITY = 0.10     # 0..1 (try 0.06–0.15)
-WATERMARK_REL_SIZE = 0.70    # fraction of min(window_w, window_h)
+WATERMARK_OPACITY = 1    # 0..1 (try 0.06–0.15)
 
 watermark_parent = None
 watermark_label = None
 watermark_base_img = None
 watermark_img_ref = None
 watermark_after_id = None
+
+USER_WATERMARK_FILENAME = "watermark.png"
+USER_BACKGROUND_FILENAME = "background.png"
+
+background_parent = None
+background_tile_base_img = None   # PIL RGBA tile
+background_item = None            # canvas item id
+background_img_tk = None          # ImageTk.PhotoImage (keep ref!)
+background_last_size = (0, 0)
 
 LOOT_FONT = ("Arial", 12)     # or ("Cloister Black", 18)
 
@@ -59,6 +67,24 @@ loot_idle_text = ""
 canvas_img_cache = {}          # cache PhotoImage objects so clicks don't stutter
 loot_state = "hidden"          # "hidden" | "idle" | "opening" | "opened"
 loot_click_enabled = False
+
+# -------- Canvas overlay: status ribbon --------
+status_item = None
+status_text_item = None
+status_img_tk = None
+status_after_id = None
+
+# -------- Canvas overlay: bottom (manual/vouched + relapse) --------
+manual_icon_item = None
+vouched_icon_item = None
+relapse_bg_item = None
+relapse_text_item = None
+
+manual_icon_tk = None
+vouched_icon_tk = None
+relapse_bg_tk = None
+
+_canvas_shape_cache = {}
 
 internet_on = True
 loot_box_openable = True
@@ -199,6 +225,28 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
 
     return os.path.join(base_path, relative_path)
+
+def storage_dir() -> str:
+    """
+    Folder where storage.json lives. Users can drop watermark.png/background.png here
+    even in a PyInstaller build.
+    """
+    try:
+        return os.path.dirname(os.path.abspath(Paths.JSON_FILE))
+    except Exception:
+        return os.path.abspath(".")
+
+def resolve_user_override(filename: str, fallback_rel: str | None = None) -> str | None:
+    """
+    Prefer external file next to storage.json; fallback to packaged asset (resource_path)
+    if fallback_rel is provided; otherwise None.
+    """
+    ext = os.path.join(storage_dir(), filename)
+    if os.path.exists(ext):
+        return ext
+    if fallback_rel is None:
+        return None
+    return resource_path(fallback_rel)
 
 def every(delay, task):
     next_time = time.time() + delay
@@ -388,17 +436,26 @@ def get_datetime():
     return date, time
 
 def show_status(status: str, positive: bool):
-    global status_timer
+    global status_after_id, status_img_tk, center_canvas
 
-    if not positive:
-        status_label.configure(text=status, image=get_image(Paths.ASSETS_FOLDER + "/red_ribbon.png"))
-    else:
-        status_label.configure(text=status, image=get_image(Paths.ASSETS_FOLDER + "/blue_ribbon.png"))
-    status_label.pack()
+    _ensure_status_canvas_items()
 
-    if status_timer is not None:
-        status_timer.cancel()
-    status_timer = run_function_in_minute(lambda: status_label.pack_forget())
+    ribbon_path = Paths.ASSETS_FOLDER + ("/blue_ribbon.png" if positive else "/red_ribbon.png")
+    status_img_tk = get_canvas_photo(ribbon_path)
+
+    center_canvas.itemconfigure(status_item, image=status_img_tk, state="normal")
+    center_canvas.itemconfigure(status_text_item, text=status, state="normal")
+
+    _recenter_center_canvas()
+
+    if status_after_id is not None:
+        app.after_cancel(status_after_id)
+
+    def _hide():
+        center_canvas.itemconfigure(status_item, state="hidden")
+        center_canvas.itemconfigure(status_text_item, state="hidden")
+
+    status_after_id = app.after(60_000, _hide)
 
 def run_function_in_minute(func) -> threading.Timer:
     thread = threading.Timer(60.0, func)
@@ -645,17 +702,22 @@ def manual_override():
 
     top.grab_set()
 
-def toggle_manual_icon(value : bool):
-    if value :
-        manual_icon.pack(side='right', anchor='se')
-    else:
-        manual_icon.pack_forget()
+def toggle_manual_icon(value: bool):
+    _ensure_bottom_overlay_items()
+    center_canvas.itemconfigure(manual_icon_item, state=("normal" if value else "hidden"))
+    _recenter_center_canvas()
 
-def toggle_vouched_icon(value : bool):
-    if value :
-        vouched_icon.pack(side='right', anchor='se')
-    else:
-        vouched_icon.pack_forget()
+def toggle_vouched_icon(value: bool):
+    _ensure_bottom_overlay_items()
+    center_canvas.itemconfigure(vouched_icon_item, state=("normal" if value else "hidden"))
+    _recenter_center_canvas()
+
+def toggle_relapse_button(on: bool):
+    _ensure_bottom_overlay_items()
+    st = "normal" if on else "hidden"
+    center_canvas.itemconfigure(relapse_bg_item, state=st)
+    center_canvas.itemconfigure(relapse_text_item, state=st)
+    _recenter_center_canvas()
 
 def relapse(top : customtkinter.CTkToplevel):
     global streak
@@ -686,12 +748,6 @@ def get_last_relapse() -> datetime:
 
     last_relapse = datetime.strptime(json_data[StorageKey.SINCE_LAST_RELAPSE], '%m/%d/%y %H:%M:%S')
     return last_relapse.replace(hour=cutoff_time.hour, minute=cutoff_time.minute)
-
-def toggle_relapse_button(on : bool):
-    if on:
-        relapse_button.pack(side='bottom', anchor='s', expand=True, fill='x')
-    else:
-        relapse_button.pack_forget()
 
 def loot_box():
     global box_consumed, loot_state, loot_click_enabled, loot_img_tk
@@ -1102,14 +1158,33 @@ def init_watermark_canvas(canvas: tkinter.Canvas):
     global watermark_parent, watermark_base_img, watermark_tk, watermark_item
     watermark_parent = canvas
 
-    p = resource_path(WATERMARK_PATH)
-    watermark_base_img = _apply_opacity_rgba(Image.open(p).convert("RGBA"), WATERMARK_OPACITY)
+    # Prefer external watermark.png next to storage.json; fallback to packaged asset.
+    wm_path = resolve_user_override(USER_WATERMARK_FILENAME, fallback_rel=WATERMARK_PATH)
 
-    # native size (no scaling)
-    watermark_tk = ImageTk.PhotoImage(watermark_base_img)
+    # If neither exists, do nothing (NO ERROR)
+    if not wm_path or not os.path.exists(wm_path):
+        watermark_base_img = None
+        watermark_tk = None
+        watermark_item = None
+        return
 
-    watermark_item = canvas.create_image(0, 0, image=watermark_tk, anchor="center")
-    _recenter_center_canvas()  # initial position
+    try:
+        base = Image.open(wm_path).convert("RGBA")
+        watermark_base_img = _apply_opacity_rgba(base, WATERMARK_OPACITY)
+        watermark_tk = ImageTk.PhotoImage(watermark_base_img)
+
+        # IMPORTANT: tag it "watermark" so tag_raise works
+        watermark_item = canvas.create_image(
+            0, 0, image=watermark_tk, anchor="center", tags=("watermark",)
+        )
+
+        canvas.tag_raise("watermark")
+        _recenter_center_canvas()
+    except Exception as e:
+        print(f"Watermark load failed ({wm_path}): {e}")
+        watermark_base_img = None
+        watermark_tk = None
+        watermark_item = None
 
 def get_canvas_photo(asset_rel_path: str) -> ImageTk.PhotoImage:
     """Loads once; returns cached PhotoImage for canvas use."""
@@ -1126,10 +1201,17 @@ def loot_visible() -> bool:
     return loot_item is not None and center_canvas.itemcget(loot_item, "state") != "hidden"
 
 def _recenter_center_canvas(event=None):
+    
     w = center_canvas.winfo_width()
     h = center_canvas.winfo_height()
     if w < 2 or h < 2:
         return
+
+    # update tiled background if present
+    _update_tiled_background()
+
+    # keep bg at the bottom, watermark above bg
+    _enforce_canvas_zorder()
 
     if watermark_item is not None:
         center_canvas.coords(watermark_item, w / 2, h / 2)
@@ -1147,6 +1229,36 @@ def _recenter_center_canvas(event=None):
 
         text_y = (h / 2) - (img_h / 2) - 10  # 10px gap above image
         center_canvas.coords(loot_text_item, w / 2, text_y)
+    # ---- status ribbon (top center) ----
+    if status_item is not None and status_img_tk is not None:
+        top_pad = -4  # try 0, -4, -8
+        center_canvas.coords(status_item, w / 2, top_pad)
+
+        # Put text vertically centered on the ribbon image (more robust than "16")
+        try:
+            rh = status_img_tk.height() / 1.5
+        except Exception:
+            rh = 40
+
+        center_canvas.coords(status_text_item, w / 2, top_pad + rh * 0.42)
+
+    # ---- bottom overlay (bottom-right cluster) ----
+    if manual_icon_item is not None:
+        pad = 12
+        y = h - pad
+        x = w - pad
+
+        # icons stacked
+        center_canvas.coords(manual_icon_item, x, y)
+        center_canvas.coords(vouched_icon_item, x - 44, y)  # shift left of manual icon
+
+        # relapse button above icons
+        btn_x = x
+        btn_y = y - 44
+        center_canvas.coords(relapse_bg_item, btn_x, btn_y)
+
+        # center text over button bg
+        center_canvas.coords(relapse_text_item, btn_x - 120, btn_y - 17)  # half of 240x34
 
 def update_watermark():
     global watermark_img_ref, watermark_after_id
@@ -1159,7 +1271,7 @@ def update_watermark():
     if w < 20 or h < 20:
         return
 
-    target = int(min(w, h) * WATERMARK_REL_SIZE)
+    target = int(min(w, h))
 
     img = _apply_opacity_rgba(watermark_base_img, WATERMARK_OPACITY).copy()
     img.thumbnail((target, target), Image.Resampling.LANCZOS)
@@ -1199,6 +1311,179 @@ def _ensure_loot_canvas_items():
     center_canvas.tag_bind("loot", "<Button-1>", on_click)
     center_canvas.tag_bind("loot", "<Enter>", on_enter)
     center_canvas.tag_bind("loot", "<Leave>", on_leave)
+    _enforce_canvas_zorder()
+
+def _get_round_rect_photo(w: int, h: int, r: int, rgba: tuple) -> ImageTk.PhotoImage:
+    """
+    Creates (and caches) a rounded-rect RGBA image for canvas use.
+    rgba = (R,G,B,A)
+    """
+    key = (w, h, r, rgba)
+    img = _canvas_shape_cache.get(key)
+    if img is not None:
+        return img
+
+    pil = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(pil)
+    d.rounded_rectangle((0, 0, w - 1, h - 1), radius=r, fill=rgba)
+    tk_img = ImageTk.PhotoImage(pil)
+    _canvas_shape_cache[key] = tk_img
+    return tk_img
+
+
+def _ensure_status_canvas_items():
+    global status_item, status_text_item
+    if status_item is not None:
+        return
+
+    status_item = center_canvas.create_image(0, 0, anchor="n", state="hidden", tags=("status",))
+    status_text_item = center_canvas.create_text(
+        0, 0,
+        text="",
+        fill="white",
+        font=("DreiFraktur", 15),
+        anchor="n",
+        state="hidden",
+        tags=("status",)
+    )
+    _enforce_canvas_zorder()
+
+def _ensure_bottom_overlay_items():
+    global manual_icon_item, vouched_icon_item, relapse_bg_item, relapse_text_item
+    global manual_icon_tk, vouched_icon_tk, relapse_bg_tk
+
+    if manual_icon_item is not None:
+        return
+
+    # Load icon images for canvas (alpha preserved)
+    manual_icon_tk = get_canvas_photo(Paths.ASSETS_FOLDER + "/embarrased_globe.png")
+    vouched_icon_tk = get_canvas_photo(Paths.ASSETS_FOLDER + "/voucher_globe.png")
+
+    manual_icon_item = center_canvas.create_image(0, 0, anchor="se", image=manual_icon_tk,
+                                                  state="hidden", tags=("bottomui",))
+    vouched_icon_item = center_canvas.create_image(0, 0, anchor="se", image=vouched_icon_tk,
+                                                   state="hidden", tags=("bottomui",))
+
+    # "Relapse" button background (semi-transparent red)
+    relapse_bg_tk = _get_round_rect_photo(240, 34, 10, (181, 27, 32, 210))
+    relapse_bg_item = center_canvas.create_image(0, 0, anchor="se", image=relapse_bg_tk,
+                                                 state="hidden", tags=("relapsebtn", "bottomui"))
+    relapse_text_item = center_canvas.create_text(
+        0, 0,
+        text="Override Turn On Internet",
+        fill="white",
+        font=("Arial", 11),
+        anchor="center",
+        state="hidden",
+        tags=("relapsebtn", "bottomui")
+    )
+
+    def _relapse_click(_e=None):
+        manual_override()
+
+    def _relapse_enter(_e=None):
+        if center_canvas.itemcget(relapse_bg_item, "state") != "hidden":
+            center_canvas.configure(cursor="hand2")
+
+    def _relapse_leave(_e=None):
+        center_canvas.configure(cursor="")
+
+    center_canvas.tag_bind("relapsebtn", "<Button-1>", _relapse_click)
+    center_canvas.tag_bind("relapsebtn", "<Enter>", _relapse_enter)
+    center_canvas.tag_bind("relapsebtn", "<Leave>", _relapse_leave)
+    _enforce_canvas_zorder()
+
+def init_background_canvas(canvas: tkinter.Canvas):
+    """
+    If background.png exists next to storage.json, tile it to fill the canvas.
+    Never errors if missing.
+    """
+    global background_parent, background_tile_base_img, background_item, background_img_tk, background_last_size
+
+    background_parent = canvas
+    bg_path = resolve_user_override(USER_BACKGROUND_FILENAME, fallback_rel=None)
+
+    print("storage_dir =", storage_dir())
+    print("bg_path     =", bg_path)
+    print("exists      =", (bg_path and os.path.exists(bg_path)))
+
+
+    # If missing, do nothing (NO ERROR)
+    if not bg_path or not os.path.exists(bg_path):
+        background_tile_base_img = None
+        background_item = None
+        background_img_tk = None
+        background_last_size = (0, 0)
+        return
+
+    try:
+        background_tile_base_img = Image.open(bg_path).convert("RGBA")
+    except Exception as e:
+        print(f"Background load failed ({bg_path}): {e}")
+        background_tile_base_img = None
+        background_item = None
+        return
+
+    background_item = canvas.create_image(0, 0, anchor="nw", tags=("bg",))
+    background_last_size = (0, 0)
+
+    # Ensure it's at the bottom
+    canvas.tag_lower("bg")
+
+    # Canvas is often 1x1 right now; schedule first paint after geometry settles
+    canvas.after(0, _update_tiled_background)
+
+def _enforce_canvas_zorder():
+    # Bottom-most: background
+    if background_item is not None:
+        center_canvas.tag_lower("bg")
+
+    # Watermark: above bg, below everything else
+    if watermark_item is not None:
+        if background_item is not None:
+            center_canvas.tag_raise("watermark", "bg")  # just above bg
+        else:
+            center_canvas.tag_lower("watermark")
+
+        # Push overlays above watermark
+        for tag in ("status", "loot", "bottomui", "relapsebtn"):
+            center_canvas.tag_raise(tag, "watermark")
+
+def _update_tiled_background():
+    global background_parent, background_tile_base_img, background_item
+    global background_img_tk, background_last_size
+
+    if background_parent is None or background_tile_base_img is None or background_item is None:
+        return
+
+    w = background_parent.winfo_width()
+    h = background_parent.winfo_height()
+
+    # If canvas isn't laid out yet, try again shortly
+    if w < 2 or h < 2:
+        background_parent.after(50, _update_tiled_background)
+        return
+
+    if (w, h) == background_last_size:
+        return
+
+    tw, th = background_tile_base_img.size
+    if tw <= 0 or th <= 0:
+        return
+
+    # build a single large image by tiling the small one
+    tiled = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    for y in range(0, h, th):
+        for x in range(0, w, tw):
+            tiled.paste(background_tile_base_img, (x, y))
+
+    background_img_tk = ImageTk.PhotoImage(tiled)  # KEEP REF
+    background_parent.itemconfigure(background_item, image=background_img_tk)
+    background_parent.coords(background_item, 0, 0)
+    background_last_size = (w, h)
+
+    # keep it below everything
+    background_parent.tag_lower("bg")
 
 def schedule_update_gui():
     update_gui()
@@ -1359,16 +1644,6 @@ time_until_label.pack()
 status_label = customtkinter.CTkLabel(app, text=f"", text_color="white", font=("DreiFraktur", 15), compound='center', anchor='n')
 status_label.pack_forget()
 
-# Initial Status
-if do_request(Actions.INTERNET_STATUS, ""):
-    internet_on = True
-    show_status("Internet is On", True)
-    set_icon(True)
-else:
-    internet_on = False
-    show_status("Internet is Off", False)
-    set_icon(False)
-
 # Admin Check
 if not do_request(Actions.ADMIN_STATUS, ""):
     show_status("Server is not running in Admin", False)
@@ -1429,28 +1704,33 @@ if ConfigKey.DEBUG in cfg and cfg[ConfigKey.DEBUG]:
     test_loot_box.pack(side='right', anchor='w', expand=False)
 
 
-extra_bottom_frame = customtkinter.CTkFrame(app, height = 36, fg_color='#25292e', corner_radius=0)
-extra_bottom_frame.pack(side='bottom', fill="x")
-
 # Center (main) area: use Canvas so background + watermark are real pixels
 center_canvas = tkinter.Canvas(app, bg=app_bg_color, highlightthickness=0, bd=0)
 center_canvas.pack(side="top", fill="both", expand=True)
 
-init_watermark_canvas(center_canvas)
+# Bind FIRST so we never miss the first real resize
 center_canvas.bind("<Configure>", _recenter_center_canvas)
 
-manual_icon = customtkinter.CTkLabel(extra_bottom_frame, text="", image=get_image(Paths.ASSETS_FOLDER + "/embarrased_globe.png"))
+init_background_canvas(center_canvas)
+init_watermark_canvas(center_canvas)
+
+# Also force one recenter after layout settles (belt + suspenders)
+app.after(50, _recenter_center_canvas)
+
+_ensure_bottom_overlay_items()
 toggle_manual_icon(used_manual_override)
-
-vouched_icon = customtkinter.CTkLabel(extra_bottom_frame, text="", image=get_image(Paths.ASSETS_FOLDER + "/voucher_globe.png"))
 toggle_vouched_icon(used_voucher_today)
-
-# manual on button
-relapse_button = CTkButton(extra_bottom_frame, text = 'Override Turn On Internet',
-                        command = manual_override,
-                        hover_color='#691114',
-                        fg_color="#b51b20")
 toggle_relapse_button(not internet_on)
+
+# Initial Status
+if do_request(Actions.INTERNET_STATUS, ""):
+    internet_on = True
+    show_status("Internet is On", True)
+    set_icon(True)
+else:
+    internet_on = False
+    show_status("Internet is Off", False)
+    set_icon(False)
 
 streak = clamp(math.floor((now - last_relapse).total_seconds() / 86400),0,999999)
 
