@@ -9,7 +9,7 @@ import selectors
 import traceback
 import libclient
 import os.path
-import time, traceback
+import time
 import math
 import ctypes
 import webbrowser
@@ -243,12 +243,6 @@ def do_request(action, value):
     finally:
         sel.close()
 
-def do_request_async(action, value, on_done):
-    def worker():
-        result = do_request(action, value)
-        app.after(0, lambda: on_done(result))
-    threading.Thread(target=worker, daemon=True).start()
-
 def do_request_async(action, value="", on_done=None):
     if on_done is None:
         on_done = lambda _res: None
@@ -276,21 +270,22 @@ def update_gui():
     global internet_on
     global local_vouchers_used
 
+    now = datetime.now()
+
     (_date, _time) = get_datetime()
     date_label.configure(text=_date)
     time_label.configure(text=_time)
 
     # Soonest time delta 
-    for data in time_action_buttons:
-        if not data.vouched:
-            soonest_data = data
-            break
+    soonest_data = next((d for d in time_action_buttons if not d.vouched), None)
+    if soonest_data is None:
+        time_until_label.configure(text="--:--")
+        return
+
     soonest_time_delta = soonest_data.datetime  - now
     color = soonest_data.get_color()
     hvr_color = Color(rgb=(clamp(color.red*1.4,0,1), clamp(color.green*1.4,0,1), clamp(color.blue*1.4,0,1)))
     time_until_label.configure(text=':'.join(str(soonest_time_delta).split(':')[:2]), text_color=str(hvr_color))
-
-    now = datetime.now()
 
     if now > cutoff_time:
         recalculate_streak()
@@ -340,7 +335,7 @@ def update_button_color():
         update_help_colors(time_action_buttons[0])
 
 def recalculate_time(data: time_action_data):
-   global tomorrow
+   global now, tomorrow
    tomorrow = now + timedelta(days=1)
    data.datetime = data.datetime.replace(year=tomorrow.year, month=tomorrow.month, day=tomorrow.day)
    data.make_unvouched()
@@ -388,14 +383,16 @@ def show_status(status : str, positive : bool):
     status_timer = run_function_in_minute(lambda: status_label.pack_forget())
 
 def run_function_in_minute(func) -> threading.Timer:
-    thread = threading.Timer(60.0, func) # 60 seconds = 1 minute
+    thread = threading.Timer(60.0, func)
     thread.daemon = True
     thread.start()
+    return thread
 
 def run_function_in_five_secs(func) -> threading.Timer:
-    thread = threading.Timer(5.0, func) # 60 seconds = 1 minute
+    thread = threading.Timer(5.0, func)
     thread.daemon = True
     thread.start()
+    return thread
 
 def write_data_to_json():
     with open(Paths.JSON_FILE, 'w') as f:
@@ -409,9 +406,9 @@ def lerp_color(c1,c2,t):
 
 def create_gradient(colors):
     gradient = []
-    for i in range(len(colors)-2):
+    for i in range(len(colors) - 1):
         for j in range(COLOR_AMOUNT):
-            gradient.append(lerp_color(colors[i],colors[i+1],j/COLOR_AMOUNT))
+            gradient.append(lerp_color(colors[i], colors[i+1], j / COLOR_AMOUNT))
     return gradient
 
 def sort_labels():
@@ -502,6 +499,28 @@ def update_loot_button():
         loot_button.configure(text_color=FULL_COLOR)
     else:
         loot_button.configure(text_color="#ffffff")
+
+def refresh_loot_count_async():
+    """
+    Sync local_loot_boxes to server storage count, adjusted for an on-screen reserved box.
+    Server count includes ALL stored boxes; GUI wants 'how many are in storage right now'
+    (excluding the currently displayed box).
+    """
+    def on_count(result):
+        if isinstance(result, Exception):
+            return
+
+        server_count = int(result or 0)
+
+        # If a loot box is currently out / displayed, it is "reserved" and should not
+        # be counted as available in storage (server still counts it).
+        reserved = 1 if not loot_box_openable else 0
+
+        global local_loot_boxes
+        local_loot_boxes = clamp(server_count - reserved, 0, loot_limit)
+        update_loot_button()
+
+    do_request_async(Actions.LOOT_CHECK, MessageKey.ALL_LOOT_BOXES, on_count)
 
 def time_action_button_create(time : str, label_type : ConfigKey) -> time_action_data:
     global tomorrow
@@ -599,12 +618,12 @@ def manual_override():
     top.title("Pathetic")
     label = customtkinter.CTkLabel(top, text= f"Are you really sure that you want to end \n your streak of {streak} and turn on the internet?", font=('Mistral 18 bold', 20), pady=10)
     label.pack(side='top')
-    internet_on = CTkButton(top, text = 'Forsake your Honor',
+    btn = CTkButton(top, text = 'Forsake your Honor',
                         command= lambda : relapse(top),
                         hover_color='#691114',
                         font=('Mistral 18 bold', 20),
                         fg_color="#b51b20")  
-    internet_on.place(relx=0.5, rely=0.5, anchor="center")
+    btn.place(relx=0.5, rely=0.5, anchor="center")
 
     top.grab_set()
 
@@ -625,6 +644,7 @@ def relapse(top : customtkinter.CTkToplevel):
     global last_relapse
     global json_data
     global internet_on
+    global used_manual_override
 
     top.destroy()
     streak = 0
@@ -654,46 +674,6 @@ def toggle_relapse_button(on : bool):
         relapse_button.pack(side='bottom', anchor='s', expand=True, fill='x')
     else:
         relapse_button.pack_forget()
-
-def toggle_loot_box(show_box : bool, new_loot_amount = 0):
-    global loot_box_openable
-    global local_loot_boxes
-    global current_lootbox
-    global lootbox_timer
-    
-    #Box is already screen condition
-    if (not loot_box_openable) and ((not show_box) or new_loot_amount > 0):
-        local_loot_boxes += 1
-        update_loot_button()
-
-    if show_box and ((loot_box_openable and local_loot_boxes > 0) or new_loot_amount > 0):
-
-        current_lootbox = do_request(Actions.GET_LOOT, "")
-        if current_lootbox == MessageKey.NO_LOOT_BOX: return
-
-        idle_text = "You pulled a box out of storage"
-        if new_loot_amount > 1 : idle_text = f'You found {new_loot_amount} internet boxes!'
-        elif new_loot_amount > 0 : idle_text = 'You found an internet box!'
-
-        if current_lootbox == MessageKey.NORMAL_LOOT_BOX:
-            internet_box_button.configure(image=get_image(Paths.ASSETS_FOLDER + "/internet_box.png")) 
-        elif current_lootbox == MessageKey.SHUTDOWN_LOOT_BOX:
-            internet_box_button.configure(image=get_image(Paths.ASSETS_FOLDER + "/shutdown_internet_box.png")) 
-
-        internet_box_button.configure(text = idle_text, state="enabled")
-        internet_box_button.pack(fill="both", expand=True, padx=20, pady=20)
-        internet_box_button.bind("<Enter>", lambda e: internet_box_button.configure(text="Click to open!"))
-        internet_box_button.bind("<Leave>", lambda e: internet_box_button.configure(text=idle_text))
-
-        if new_loot_amount == 0: local_loot_boxes = local_loot_boxes - 1
-        loot_box_openable = False
-        update_loot_button()
-
-        if lootbox_timer != None: lootbox_timer.cancel()
-        lootbox_timer = run_function_in_minute(lambda : toggle_loot_box(False))
-    elif not show_box:
-        internet_box_button.pack_forget()
-        loot_box_openable = True
 
 def loot_box():
     global box_consumed
@@ -736,11 +716,12 @@ def get_loot():
         if hide_after_id is not None:
             app.after_cancel(hide_after_id)
         hide_after_id = app.after(60_000, hide_loot_box)
+        refresh_loot_count_async()
 
     do_request_async(Actions.LOOT_OPEN, current_lootbox, on_opened)
 
 def hide_loot_box():
-    global loot_box_openable, box_origin, box_consumed, local_loot_boxes, hide_after_id
+    global loot_box_openable, box_origin, box_consumed, hide_after_id
 
     if hide_after_id is not None:
         app.after_cancel(hide_after_id)
@@ -749,14 +730,11 @@ def hide_loot_box():
     if internet_box_button.winfo_ismapped():
         internet_box_button.pack_forget()
 
-    # If it wasn't opened, it goes to storage (regardless of origin)
-    if box_origin is not None and not box_consumed:
-        local_loot_boxes = min(loot_limit, local_loot_boxes + 1)
-        update_loot_button()
-
     loot_box_openable = True
     box_origin = None
     box_consumed = False
+
+    refresh_loot_count_async()
 
 def show_loot_box(origin: str, found_count: int = 0):
     """
@@ -809,18 +787,20 @@ def show_loot_box(origin: str, found_count: int = 0):
         if hide_after_id is not None:
             app.after_cancel(hide_after_id)
         hide_after_id = app.after(60_000, hide_loot_box)
+        refresh_loot_count_async()
 
     do_request_async(Actions.GET_LOOT, "", on_type)
 
 def pull_box_from_storage():
     global local_loot_boxes
-    if not loot_box_openable:
+    if not loot_box_openable or local_loot_boxes <= 0:
         return
-    if local_loot_boxes <= 0:
-        return
+
     local_loot_boxes -= 1
     update_loot_button()
+
     show_loot_box("storage")
+    refresh_loot_count_async()
 
 def check_new_loot():
     def on_new_amount(result):
@@ -831,20 +811,14 @@ def check_new_loot():
         if new_amount <= 0:
             return
 
-        global local_loot_boxes
-
         if loot_box_openable:
-            # Hold 1 on screen, put the rest into storage
-            to_storage = max(0, new_amount - 1)
-            local_loot_boxes = min(loot_limit, local_loot_boxes + to_storage)
-            update_loot_button()
             show_loot_box("found", found_count=new_amount)
         else:
-            # Box already on screen -> all new ones go to storage
-            local_loot_boxes = min(loot_limit, local_loot_boxes + new_amount)
-            update_loot_button()
-            # (Optional) small UX note:
-            internet_box_button.configure(text=f"{internet_box_button.cget('text')}\n(+{new_amount} stored)")
+            internet_box_button.configure(
+                text=f"{internet_box_button.cget('text')}\n(+{new_amount} stored)"
+            )
+
+        refresh_loot_count_async()
 
     do_request_async(Actions.NEW_LOOT, "", on_new_amount)
 
@@ -1231,7 +1205,7 @@ if ConfigKey.DEBUG in cfg and cfg[ConfigKey.DEBUG]:
     test_gif_on.pack(side='right', anchor='w', expand=False)
     
     test_loot_box = CTkButton(debug_frame, text = 'Test Lootbox',
-                            command = lambda : toggle_loot_box(True))  
+                            command=lambda: show_loot_box("found", found_count=1)) 
     test_loot_box.pack(side='right', anchor='w', expand=False)
 
 
@@ -1285,7 +1259,9 @@ internet_box_button = CTkButton(app, text = 'You found an internet box!',
                         hover= True,
                         command= loot_box,
                         text_color_disabled="white")
+
 check_new_loot()
+refresh_loot_count_async()
 
 help_icon = CTkButton(help_frame,
                         hover_color=app_bg_color,
