@@ -12,7 +12,7 @@ import internet_management
 import configreader
 import pyuac
 from playsound import playsound
-from libuniversal import Actions, ConfigKey, StorageKey, Paths, TimeKey
+from libuniversal import *
 from datetime import datetime, timedelta
 
 SECONDS_DATA_UPDATE = 60
@@ -57,16 +57,6 @@ class StoppableThread(threading.Thread):
 
     def stopped(self):
         return self._stop_event.is_set()
-
-def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
-    try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
-
-    return os.path.join(base_path, relative_path)
 
 def every(delay, task):
     while True:

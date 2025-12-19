@@ -7,16 +7,18 @@ import socket
 import sys
 import selectors
 import traceback
-import libclient
 import os.path
 import time
 import math
 import ctypes
 import webbrowser
 import random
-from libuniversal import Actions, ConfigKey, StorageKey, Paths, MessageKey
+from libuniversal import *
+from libclient import *
+from gui_text import *
 from customtkinter import CTkButton, CTkFont
 from colour import Color
+from message import Message
 from datetime import datetime, timedelta
 from PIL import Image, ImageTk, ImageDraw
 
@@ -61,6 +63,7 @@ LOOT_FONT = ("Arial", 12)     # or ("Cloister Black", 18)
 loot_img_tk = None
 loot_item = None
 loot_text_item = None
+loot_text = None
 loot_idle_text = ""
 
 # -------- Canvas loot UI state --------
@@ -216,38 +219,6 @@ class internet_up_data(time_action_data):
         self.color_list = up_colors
         super(internet_up_data, self).__init__(_time, button)
 
-def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
-    try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
-
-    return os.path.join(base_path, relative_path)
-
-def storage_dir() -> str:
-    """
-    Folder where storage.json lives. Users can drop watermark.png/background.png here
-    even in a PyInstaller build.
-    """
-    try:
-        return os.path.dirname(os.path.abspath(Paths.JSON_FILE))
-    except Exception:
-        return os.path.abspath(".")
-
-def resolve_user_override(filename: str, fallback_rel: str | None = None) -> str | None:
-    """
-    Prefer external file next to storage.json; fallback to packaged asset (resource_path)
-    if fallback_rel is provided; otherwise None.
-    """
-    ext = os.path.join(storage_dir(), filename)
-    if os.path.exists(ext):
-        return ext
-    if fallback_rel is None:
-        return None
-    return resource_path(fallback_rel)
-
 def every(delay, task):
     next_time = time.time() + delay
     while True:
@@ -292,7 +263,7 @@ def start_connection(sel, host, port, request):
     sock.setblocking(False)
     sock.connect_ex(addr)
     events = selectors.EVENT_READ | selectors.EVENT_WRITE
-    message = libclient.Message(sel, sock, addr, request)
+    message = Message(sel, sock, addr, request)
     sel.register(sock, events, data=message)
     return message
 
@@ -436,7 +407,7 @@ def get_datetime():
     return date, time
 
 def show_status(status: str, positive: bool):
-    global status_after_id, status_img_tk, center_canvas
+    global status_after_id, status_img_tk
 
     _ensure_status_canvas_items()
 
@@ -576,23 +547,13 @@ def update_loot_button():
         loot_button.configure(text_color="#ffffff")
 
 def refresh_loot_count_async():
-    """
-    Sync local_loot_boxes to server storage count, adjusted for an on-screen reserved box.
-    Server count includes ALL stored boxes; GUI wants 'how many are in storage right now'
-    (excluding the currently displayed box).
-    """
     def on_count(result):
         if isinstance(result, Exception):
             return
-
         server_count = int(result or 0)
 
-        # If a loot box is currently out / displayed, it is "reserved" and should not
-        # be counted as available in storage (server still counts it).
-        reserved = 1 if not loot_box_openable else 0
-
         global local_loot_boxes
-        local_loot_boxes = clamp(server_count - reserved, 0, loot_limit)
+        local_loot_boxes = clamp(server_count, 0, loot_limit)
         update_loot_button()
 
     do_request_async(Actions.LOOT_CHECK, MessageKey.ALL_LOOT_BOXES, on_count)
@@ -766,7 +727,7 @@ def loot_box():
 
     loot_img_tk = get_canvas_photo(open_path)
     center_canvas.itemconfigure(loot_item, image=loot_img_tk)
-    center_canvas.itemconfigure(loot_text_item, text="You opened the box...")
+    loot_text.set_text("You opened the box...")
 
     delay_ms = random.randint(2, 10) * 1000
     if box_origin == "debug":
@@ -778,7 +739,7 @@ def loot_box():
 def get_loot():
     def on_opened(result):
         if isinstance(result, Exception):
-            center_canvas.itemconfigure(loot_text_item, text="Server error opening box :(")
+            loot_text.set_text("Server error opening box :(")
             # allow it to auto-hide normally
             global hide_after_id
             if hide_after_id is not None:
@@ -791,13 +752,13 @@ def get_loot():
         global loot_state, loot_img_tk
 
         if voucher_amount <= 0:
-            center_canvas.itemconfigure(loot_text_item, text="There was nothing inside :(")
+            loot_text.set_text("There was nothing inside :(")
         elif local_vouchers + voucher_amount + local_vouchers_used <= voucher_limit:
-            center_canvas.itemconfigure(loot_text_item, text="You found a voucher!!!")
+            loot_text.set_text("You found a voucher!!!")
             loot_img_tk = get_canvas_photo(Paths.ASSETS_FOLDER + "/voucher.png")
             center_canvas.itemconfigure(loot_item, image=loot_img_tk)
         else:
-            center_canvas.itemconfigure(loot_text_item, text="You found a voucher, but don't have room...")
+            loot_text.set_text("You found a voucher, but don't have room...")
             loot_img_tk = get_canvas_photo(Paths.ASSETS_FOLDER + "/voucher.png")
             center_canvas.itemconfigure(loot_item, image=loot_img_tk)
 
@@ -819,10 +780,6 @@ def hide_loot_box():
         app.after_cancel(hide_after_id)
         hide_after_id = None
 
-    if loot_item is not None:
-        center_canvas.itemconfigure(loot_item, state="hidden")
-        center_canvas.itemconfigure(loot_text_item, state="hidden")
-
     loot_box_openable = True
     box_origin = None
     box_consumed = False
@@ -830,6 +787,11 @@ def hide_loot_box():
     loot_state = "hidden"
     loot_click_enabled = False
     center_canvas.configure(cursor="")
+
+    if loot_item is not None:
+        center_canvas.itemconfigure(loot_item, state="hidden")
+    if loot_text is not None:
+        loot_text.set_state("hidden")
 
     refresh_loot_count_async()
 
@@ -871,7 +833,8 @@ def show_loot_box(origin: str, found_count: int = 0):
 
         loot_img_tk = get_canvas_photo(img_path)
         center_canvas.itemconfigure(loot_item, image=loot_img_tk, state="normal")
-        center_canvas.itemconfigure(loot_text_item, text=loot_idle_text, state="normal")
+        loot_text.set_state("normal")
+        loot_text.set_text(loot_idle_text)
 
         loot_state = "idle"
         loot_click_enabled = True
@@ -881,7 +844,6 @@ def show_loot_box(origin: str, found_count: int = 0):
         if hide_after_id is not None:
             app.after_cancel(hide_after_id)
         hide_after_id = app.after(60_000, hide_loot_box)
-
 
         refresh_loot_count_async()
 
@@ -916,7 +878,7 @@ def debug_show_loot_box(found_count: int = 1):
     loot_img_tk = get_canvas_photo(img_path)
 
     center_canvas.itemconfigure(loot_item, image=loot_img_tk, state="normal")
-    center_canvas.itemconfigure(loot_text_item, text=loot_idle_text, state="normal")
+    loot_text.set_state("normal")
 
     loot_state = "idle"
     loot_click_enabled = True
@@ -938,13 +900,13 @@ def debug_get_loot_result():
     voucher_amount = 1 if random.random() < 0.60 else 0
 
     if voucher_amount <= 0:
-        center_canvas.itemconfigure(loot_text_item, text="There was nothing inside :(")
+        loot_text.set_text("There was nothing inside :(")
     elif local_vouchers + voucher_amount + local_vouchers_used <= voucher_limit:
-        center_canvas.itemconfigure(loot_text_item, text="You found a voucher!!!")
+        loot_text.set_text("You found a voucher!!!")
         loot_img_tk = get_canvas_photo(Paths.ASSETS_FOLDER + "/voucher.png")
         center_canvas.itemconfigure(loot_item, image=loot_img_tk)
     else:
-        center_canvas.itemconfigure(loot_text_item, text="You found a voucher, but don't have room...")
+        loot_text.set_text("You found a voucher, but don't have room...")
         loot_img_tk = get_canvas_photo(Paths.ASSETS_FOLDER + "/voucher.png")
         center_canvas.itemconfigure(loot_item, image=loot_img_tk)
 
@@ -980,10 +942,7 @@ def check_new_loot():
         if loot_box_openable:
             show_loot_box("found", found_count=new_amount)
         elif loot_visible():
-                center_canvas.itemconfigure(
-                    loot_text_item,
-                    text=f"{loot_idle_text}\n(+{new_amount} stored)"
-                )
+            loot_text.set_text(f"{loot_idle_text}\n(+{new_amount} stored)")
 
         refresh_loot_count_async()
 
@@ -1228,7 +1187,7 @@ def _recenter_center_canvas(event=None):
             pass
 
         text_y = (h / 2) - (img_h / 2) - 10  # 10px gap above image
-        center_canvas.coords(loot_text_item, w / 2, text_y)
+        loot_text.move(w / 2, text_y)
     # ---- status ribbon (top center) ----
     if status_item is not None and status_img_tk is not None:
         top_pad = -4  # try 0, -4, -8
@@ -1244,21 +1203,41 @@ def _recenter_center_canvas(event=None):
 
     # ---- bottom overlay (bottom-right cluster) ----
     if manual_icon_item is not None:
-        pad = 12
-        y = h - pad
-        x = w - pad
+        PAD = 0   # 0 = flush; try 4 if you want a tiny inset
+        GAP = 8
 
-        # icons stacked
-        center_canvas.coords(manual_icon_item, x, y)
-        center_canvas.coords(vouched_icon_item, x - 44, y)  # shift left of manual icon
+        x_right = w - 1 - PAD
+        y_bottom = h - 1 - PAD
 
-        # relapse button above icons
-        btn_x = x
-        btn_y = y - 44
-        center_canvas.coords(relapse_bg_item, btn_x, btn_y)
+        # defaults
+        btn_w, btn_h = 240, 34
+        icon_w, icon_h = 40, 40
 
-        # center text over button bg
-        center_canvas.coords(relapse_text_item, btn_x - 120, btn_y - 17)  # half of 240x34
+        try:
+            btn_w = relapse_bg_tk.width()
+            btn_h = relapse_bg_tk.height()
+        except Exception:
+            pass
+
+        try:
+            icon_w = manual_icon_tk.width()
+            icon_h = manual_icon_tk.height()
+        except Exception:
+            pass
+
+        # place button flush bottom-right (even if hidden; coords are fine)
+        if relapse_bg_item is not None:
+            center_canvas.coords(relapse_bg_item, x_right, y_bottom)  # anchor="se"
+        if relapse_text_item is not None:
+            center_canvas.coords(relapse_text_item, x_right - (btn_w / 2), y_bottom - (btn_h / 2))
+
+        # icons go ABOVE button when button is visible, else sit on bottom
+        btn_visible = (relapse_bg_item is not None and center_canvas.itemcget(relapse_bg_item, "state") != "hidden")
+        icons_y = y_bottom - (btn_h + GAP) if btn_visible else y_bottom
+
+        center_canvas.coords(manual_icon_item, x_right, icons_y)  # anchor="se"
+        if vouched_icon_item is not None:
+            center_canvas.coords(vouched_icon_item, x_right - icon_w - GAP, icons_y)
 
 def update_watermark():
     global watermark_img_ref, watermark_after_id
@@ -1280,37 +1259,40 @@ def update_watermark():
     watermark_label.configure(image=watermark_img_ref)
 
 def _ensure_loot_canvas_items():
-    global loot_item, loot_text_item
+    global loot_item, loot_text
     if loot_item is not None:
         return
 
     loot_item = center_canvas.create_image(0, 0, anchor="center", state="hidden", tags=("loot",))
-    loot_text_item = center_canvas.create_text(
-        0, 0,
+
+    loot_text = create_outlined_text(
+        center_canvas, 0, 0,
         text="",
-        fill="white",
         font=LOOT_FONT,
-        anchor="s",          # IMPORTANT: pairs with recenter math (text_y is the baseline)
+        anchor="s",
+        fill="white",
+        outline="black",
+        thickness=2,
         state="hidden",
-        tags=("loot",)
+        tags=("loot", "loot_text")
     )
 
-    def on_click(_e=None):
-        loot_box()
+    def on_click(_e=None): loot_box()
 
     def on_enter(_e=None):
         if loot_state == "idle":
             center_canvas.configure(cursor="hand2")
-            center_canvas.itemconfigure(loot_text_item, text="Click to open!")
+            loot_text.set_text("Click to open!")
 
     def on_leave(_e=None):
         center_canvas.configure(cursor="")
         if loot_state == "idle":
-            center_canvas.itemconfigure(loot_text_item, text=loot_idle_text)
+            loot_text.set_text(loot_idle_text)
 
-    center_canvas.tag_bind("loot", "<Button-1>", on_click)
-    center_canvas.tag_bind("loot", "<Enter>", on_enter)
-    center_canvas.tag_bind("loot", "<Leave>", on_leave)
+    center_canvas.tag_bind(loot_item, "<Button-1>", on_click)
+    center_canvas.tag_bind(loot_item, "<Enter>", on_enter)
+    center_canvas.tag_bind(loot_item, "<Leave>", on_leave)
+
     _enforce_canvas_zorder()
 
 def _get_round_rect_photo(w: int, h: int, r: int, rgba: tuple) -> ImageTk.PhotoImage:
@@ -1341,7 +1323,7 @@ def _ensure_status_canvas_items():
         0, 0,
         text="",
         fill="white",
-        font=("DreiFraktur", 15),
+        font=("DreiFraktur", 12),
         anchor="n",
         state="hidden",
         tags=("status",)
@@ -1720,7 +1702,6 @@ app.after(50, _recenter_center_canvas)
 _ensure_bottom_overlay_items()
 toggle_manual_icon(used_manual_override)
 toggle_vouched_icon(used_voucher_today)
-toggle_relapse_button(not internet_on)
 
 # Initial Status
 if do_request(Actions.INTERNET_STATUS, ""):
@@ -1731,6 +1712,8 @@ else:
     internet_on = False
     show_status("Internet is Off", False)
     set_icon(False)
+
+toggle_relapse_button(not internet_on)
 
 streak = clamp(math.floor((now - last_relapse).total_seconds() / 86400),0,999999)
 
