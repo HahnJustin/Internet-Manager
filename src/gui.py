@@ -14,11 +14,11 @@ import ctypes
 import webbrowser
 import random
 from libuniversal import *
-from libclient import *
-from gui_text import *
+from assets import *
+from client.gui_text import *
 from customtkinter import CTkButton, CTkFont
 from colour import Color
-from message import Message
+from client.message import Message
 from datetime import datetime, timedelta
 from PIL import Image, ImageTk, ImageDraw
 

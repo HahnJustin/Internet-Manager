@@ -2,7 +2,7 @@ import yaml
 import socket
 import selectors
 import traceback
-import libclient
+from client.message import Message
 
 from libuniversal import Actions, ConfigKey, Paths
 
@@ -16,7 +16,7 @@ def start_connection(host, port, request):
     sock.setblocking(False)
     sock.connect_ex(addr)
     events = selectors.EVENT_READ | selectors.EVENT_WRITE
-    message = libclient.Message(sel, sock, addr, request)
+    message = message.Message(sel, sock, addr, request)
     sel.register(sock, events, data=message)
 
 def do_request(action, value) -> str:
