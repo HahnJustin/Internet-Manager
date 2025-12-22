@@ -68,7 +68,7 @@ background_item = None            # canvas item id
 background_img_tk = None          # ImageTk.PhotoImage (keep ref!)
 background_last_size = (0, 0)
 
-LOOT_FONT = ("Arial", 12)     # or ("Cloister Black", 18)
+LOOT_FONT = ("Arial", 10)     # or ("Cloister Black", 18)
 
 loot_img_tk = None
 loot_item = None
@@ -186,7 +186,7 @@ def update_gui():
         time_until_label.configure(text=":".join(str(delta).split(":")[:2]))
 
     action_list.refresh(now=state.now, vouchers=state.vouchers)
-    update_help_colors_from_action(action_list.first_action())
+    update_help_colors_from_action(action_list.first_button_action())
 
 def recalculate_cutoff_time():
     global cutoff_time
@@ -293,7 +293,18 @@ def refresh_loot_count_async():
     def on_count(result):
         if isinstance(result, Exception):
             return
+
         server_count = int(result or 0)
+
+        # If user pulled a box from storage, server still counts it as stored
+        # until it is opened/consumed. Don't let refresh snap UI back.
+        if (
+            box_origin == "storage"
+            and not box_consumed
+            and not loot_box_openable          # a box is currently "out"
+            and loot.visible()
+        ):
+            return
 
         global local_loot_boxes
         local_loot_boxes = clamp(server_count, 0, loot_limit)
@@ -389,23 +400,23 @@ def get_last_relapse() -> datetime:
     return last_relapse.replace(hour=cutoff_time.hour, minute=cutoff_time.minute)
 
 def loot_box():
-    global box_consumed, loot_state, loot_click_enabled, loot_img_tk
+    global box_consumed, box_origin
 
-    if loot_state != "idle" or not loot_click_enabled:
+    # Only respond when overlay says it’s clickable
+    if loot.state != "idle":
         return
 
-    loot_click_enabled = False
     box_consumed = True
-    loot_state = "opening"
+    loot.state = "opening"
 
-    # show opening immediately
-    open_path = Paths.ASSETS_FOLDER + ("/internet_box_open.png"
-                                      if current_lootbox == MessageKey.NORMAL_LOOT_BOX
-                                      else "/shutdown_internet_box_open.png")
+    open_path = Paths.ASSETS_FOLDER + (
+        "/internet_box_open.png"
+        if current_lootbox == MessageKey.NORMAL_LOOT_BOX
+        else "/shutdown_internet_box_open.png"
+    )
 
-    loot_img_tk = get_canvas_photo(open_path)
-    center_canvas.itemconfigure(loot_item, image=loot_img_tk)
-    loot_text.set_text("You opened the box...")
+    loot.set_image(open_path)
+    loot.set_text("You opened the box...")
 
     delay_ms = random.randint(2, 10) * 1000
     if box_origin == "debug":
@@ -413,46 +424,58 @@ def loot_box():
     else:
         app.after(delay_ms, get_loot)
 
+def _try_add_vouchers(amount: int) -> bool:
+    """Returns True if vouchers were added locally."""
+    if amount <= 0:
+        return False
+
+    # Your UI logic treats limit as (local + used_count) <= limit
+    max_local = max(0, state.vouchers.limit - state.vouchers.used_count)
+    if state.vouchers.local >= max_local:
+        return False
+
+    new_local = min(max_local, state.vouchers.local + amount)
+    if new_local == state.vouchers.local:
+        return False
+
+    state.vouchers.local = new_local
+    update_voucher_label()
+    return True
 
 def get_loot():
     def on_opened(result):
+        global hide_after_id
+
         if isinstance(result, Exception):
-            loot_text.set_text("Server error opening box :(")
-            # allow it to auto-hide normally
-            global hide_after_id
+            loot.set_text("Server error opening box :(")
             if hide_after_id is not None:
                 app.after_cancel(hide_after_id)
             hide_after_id = app.after(60_000, hide_loot_box)
             return
 
         voucher_amount = int(result or 0)
-
-        global loot_state, loot_img_tk
+        loot.state = "opened"
 
         if voucher_amount <= 0:
-            loot_text.set_text("There was nothing inside :(")
-        elif local_vouchers + voucher_amount + local_vouchers_used <= voucher_limit:
-            loot_text.set_text("You found a voucher!!!")
-            loot_img_tk = get_canvas_photo(Paths.ASSETS_FOLDER + "/voucher.png")
-            center_canvas.itemconfigure(loot_item, image=loot_img_tk)
+            loot.set_text("There was nothing inside :(")
         else:
-            loot_text.set_text("You found a voucher, but don't have room...")
-            loot_img_tk = get_canvas_photo(Paths.ASSETS_FOLDER + "/voucher.png")
-            center_canvas.itemconfigure(loot_item, image=loot_img_tk)
+            added = _try_add_vouchers(voucher_amount)
+            loot.set_image(Paths.ASSETS_FOLDER + "/voucher.png")
+            if added:
+                loot.set_text("You found a voucher!!!")
+            else:
+                loot.set_text("You found a voucher, but don't have room...")
 
-        loot_state = "opened"
-
-        # Auto-hide in 60s (but since box_consumed=True, it will NOT be stored)
         if hide_after_id is not None:
             app.after_cancel(hide_after_id)
         hide_after_id = app.after(60_000, hide_loot_box)
+
         refresh_loot_count_async()
 
     client_api.do_request_async(Actions.LOOT_OPEN, current_lootbox, on_opened)
 
 def hide_loot_box():
     global loot_box_openable, box_origin, box_consumed, hide_after_id
-    global loot_state, loot_click_enabled
 
     if hide_after_id is not None:
         app.after_cancel(hide_after_id)
@@ -462,21 +485,13 @@ def hide_loot_box():
     box_origin = None
     box_consumed = False
 
-    loot_state = "hidden"
-    loot_click_enabled = False
-    center_canvas.configure(cursor="")
-
-    if loot_item is not None:
-        center_canvas.itemconfigure(loot_item, state="hidden")
-    if loot_text is not None:
-        loot_text.set_state("hidden")
+    loot.hide()
 
     refresh_loot_count_async()
 
 def show_loot_box(origin: str, found_count: int = 0):
     global loot_box_openable, box_origin, box_consumed, hide_after_id
-    global current_lootbox, loot_idle_text
-    global loot_state, loot_click_enabled
+    global current_lootbox
 
     if not loot_box_openable:
         return
@@ -485,19 +500,20 @@ def show_loot_box(origin: str, found_count: int = 0):
     box_consumed = False
     loot_box_openable = False
 
-    loot_idle_text = "You pulled a box out of storage"
+    idle_text = "You pulled a box out of storage"
     if found_count > 1:
-        loot_idle_text = f"You found {found_count} internet boxes!"
+        idle_text = f"You found {found_count} internet boxes!"
     elif found_count == 1:
-        loot_idle_text = "You found an internet box!"
+        idle_text = "You found an internet box!"
 
     def on_type(result):
+        global current_lootbox, hide_after_id
+
         if isinstance(result, Exception):
             status.show("Server error getting loot box", False)
             hide_loot_box()
             return
 
-        global current_lootbox, hide_after_id, loot_state, loot_click_enabled
         current_lootbox = result
 
         if current_lootbox == MessageKey.NO_LOOT_BOX:
@@ -505,17 +521,15 @@ def show_loot_box(origin: str, found_count: int = 0):
             return
 
         img_path = Paths.ASSETS_FOLDER + (
-            "/internet_box.png" if current_lootbox == MessageKey.NORMAL_LOOT_BOX
+            "/internet_box.png"
+            if current_lootbox == MessageKey.NORMAL_LOOT_BOX
             else "/shutdown_internet_box.png"
         )
 
-        loot.show_box(img_path, idle_text=loot_idle_text)
-        loot.set_handlers(on_click=loot_box)  # click handler goes to your existing loot_box()
+        loot.show_box(img_path, idle_text=idle_text)
+        loot.set_handlers(on_click=loot_box)
 
-        loot_state = "idle"
-        loot_click_enabled = True
-
-        scene.layout()  # <-- THIS replaces _recenter_center_canvas()
+        scene.layout()
 
         if hide_after_id is not None:
             app.after_cancel(hide_after_id)
@@ -526,12 +540,8 @@ def show_loot_box(origin: str, found_count: int = 0):
     client_api.do_request_async(Actions.GET_LOOT, "", on_type)
 
 def debug_show_loot_box(found_count: int = 1):
-    """
-    DEBUG: Force-render a loot box on the canvas even if the server has none.
-    Click -> open animation -> simulated voucher result.
-    """
     global loot_box_openable, box_origin, box_consumed, hide_after_id
-    global current_lootbox, loot_img_tk, loot_idle_text, loot_state, loot_click_enabled
+    global current_lootbox
 
     if not loot_box_openable:
         return
@@ -540,24 +550,16 @@ def debug_show_loot_box(found_count: int = 1):
     box_consumed = False
     loot_box_openable = False
 
-    current_lootbox = MessageKey.NORMAL_LOOT_BOX  # pick a normal box type for visuals
+    current_lootbox = MessageKey.NORMAL_LOOT_BOX
 
-    loot_idle_text = "(DEBUG) Click to open!"
+    idle_text = "(DEBUG) Click to open!"
     if found_count > 1:
-        loot_idle_text = f"(DEBUG) You found {found_count} internet boxes!\nClick to open!"
+        idle_text = f"(DEBUG) You found {found_count} internet boxes!\nClick to open!"
     elif found_count == 1:
-        loot_idle_text = "(DEBUG) You found an internet box!\nClick to open!"
+        idle_text = "(DEBUG) You found an internet box!\nClick to open!"
 
-    _ensure_loot_canvas_items()
-
-    img_path = Paths.ASSETS_FOLDER + "/internet_box.png"
-    loot_img_tk = get_canvas_photo(img_path)
-
-    center_canvas.itemconfigure(loot_item, image=loot_img_tk, state="normal")
-    loot_text.set_state("normal")
-
-    loot_state = "idle"
-    loot_click_enabled = True
+    loot.show_box(Paths.ASSETS_FOLDER + "/internet_box.png", idle_text=idle_text)
+    loot.set_handlers(on_click=loot_box)
 
     scene.layout()
 
@@ -565,28 +567,21 @@ def debug_show_loot_box(found_count: int = 1):
         app.after_cancel(hide_after_id)
     hide_after_id = app.after(60_000, hide_loot_box)
 
-
 def debug_get_loot_result():
-    """
-    DEBUG: fake voucher results so the whole flow works without server.
-    """
-    global loot_state, loot_img_tk, hide_after_id
+    global hide_after_id
 
-    # 60% chance voucher, 40% nothing (tweak to taste)
     voucher_amount = 1 if random.random() < 0.60 else 0
 
-    if voucher_amount <= 0:
-        loot_text.set_text("There was nothing inside :(")
-    elif local_vouchers + voucher_amount + local_vouchers_used <= voucher_limit:
-        loot_text.set_text("You found a voucher!!!")
-        loot_img_tk = get_canvas_photo(Paths.ASSETS_FOLDER + "/voucher.png")
-        center_canvas.itemconfigure(loot_item, image=loot_img_tk)
-    else:
-        loot_text.set_text("You found a voucher, but don't have room...")
-        loot_img_tk = get_canvas_photo(Paths.ASSETS_FOLDER + "/voucher.png")
-        center_canvas.itemconfigure(loot_item, image=loot_img_tk)
+    loot.state = "opened"
 
-    loot_state = "opened"
+    if voucher_amount <= 0:
+        loot.set_text("There was nothing inside :(")
+    elif local_vouchers + voucher_amount + local_vouchers_used <= voucher_limit:
+        loot.set_text("You found a voucher!!!")
+        loot.set_image(Paths.ASSETS_FOLDER + "/voucher.png")
+    else:
+        loot.set_text("You found a voucher, but don't have room...")
+        loot.set_image(Paths.ASSETS_FOLDER + "/voucher.png")
 
     if hide_after_id is not None:
         app.after_cancel(hide_after_id)
@@ -603,7 +598,6 @@ def pull_box_from_storage():
     update_loot_button()
 
     show_loot_box("storage")
-    refresh_loot_count_async()
 
 def check_new_loot():
     def on_new_amount(result):
@@ -616,8 +610,9 @@ def check_new_loot():
 
         if loot_box_openable:
             show_loot_box("found", found_count=new_amount)
-        elif loot_visible():
-            loot_text.set_text(f"{loot_idle_text}\n(+{new_amount} stored)")
+        elif loot.visible():
+            # append "(+N stored)" message while box is already visible
+            loot.set_text(f"{loot.idle_text}\n(+{new_amount} stored)")
 
         refresh_loot_count_async()
 
@@ -658,17 +653,6 @@ def register_font(font_path):
             print("Font added successfully.")
         # Notify system about the font change
         #ctypes.windll.user32.SendMessageW(0xFFFF, 0x001D, 0, 0)
-
-def get_canvas_photo(asset_rel_path: str) -> ImageTk.PhotoImage:
-    """Loads once; returns cached PhotoImage for canvas use."""
-    global canvas_img_cache
-    full = resource_path(asset_rel_path)
-    img = canvas_img_cache.get(full)
-    if img is None:
-        pil = Image.open(full).convert("RGBA")
-        img = ImageTk.PhotoImage(pil)
-        canvas_img_cache[full] = img
-    return img
 
 def loot_visible() -> bool:
     return loot_item is not None and center_canvas.itemcget(loot_item, "state") != "hidden"
@@ -734,11 +718,33 @@ def handle_time_event(evt: str, action: TimeAction | None):
         bottom.toggle_relapse_button(False)
         toggle_globe_animation(True)
 
+def _refresh_time_until_label():
+    now = state.now
+    next_action = next(
+        (a for a in time_controller.actions if a.when > now and not getattr(a, "vouched", False)),
+        None
+    )
+    if next_action is None:
+        time_until_label.configure(text="--:--")
+    else:
+        delta = next_action.when - now
+        time_until_label.configure(text=":".join(str(delta).split(":")[:2]))
+
 def on_action_clicked(index: int):
     before = state.vouchers.local
-    time_controller.on_action_clicked(index)   # change controller to accept action
+
+    # apply voucher logic immediately
+    time_controller.on_action_clicked(index)
+
+    # update voucher label immediately if changed
     if state.vouchers.local != before:
         update_voucher_label()
+
+    # IMPORTANT: immediate UI refresh (no 1-second wait)
+    state.now = datetime.now()
+    action_list.refresh(now=state.now, vouchers=state.vouchers)
+    update_help_colors_from_action(action_list.first_button_action())
+    _refresh_time_until_label()
 
 # no clue why this works, but it allows the taskbar icon to be custom
 myappid = 'dalichrome.internetmanager.' + SOFTWARE_VERSION_V_LESS # arbitrary string
@@ -810,6 +816,11 @@ if StorageKey.VOUCHERS_USED in json_data:
             used_voucher_today = True
             print('Used voucher since last cutoff detected')
             break
+
+local_vouchers_used = 0
+used_list = json_data.get(StorageKey.VOUCHERS_USED, [])
+if isinstance(used_list, list):
+    local_vouchers_used = len(used_list)
 
 # Find if manual override
 used_manual_override = json_data[StorageKey.MANUAL_USED]

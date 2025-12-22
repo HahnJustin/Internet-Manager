@@ -30,7 +30,6 @@ def _darken_hex_like_old(hex_color: str) -> str:
     b = int(clamp(b / 1.2, 0, 255))
     return f"#{r:02x}{g:02x}{b:02x}"
 
-
 class ActionListView(ctk.CTkFrame):
     def __init__(
         self,
@@ -55,6 +54,8 @@ class ActionListView(ctk.CTkFrame):
 
         self.on_click = on_click
 
+        self._vouchers = None
+
         self.buttons: list[ctk.CTkButton] = []
         self._last_now = datetime.now()
 
@@ -68,8 +69,7 @@ class ActionListView(ctk.CTkFrame):
 
     def refresh(self, now: datetime, vouchers=None):
         self._last_now = now
-
-        # Allow list reordering as time passes
+        self._vouchers = vouchers  # <-- add this
         self.actions.sort(key=lambda a: a.when)
 
         if len(self.buttons) != len(self.actions):
@@ -80,7 +80,7 @@ class ActionListView(ctk.CTkFrame):
 
     def recolor(self):
         # leave hover intact; we guard fg_color updates while hovered
-        self.refresh(self._last_now, vouchers=None)
+        self.refresh(self._last_now, vouchers=self._vouchers)
 
     def get_colors(self, action: TimeAction, now: datetime):
         fg = self._fg(action, now)
@@ -94,6 +94,11 @@ class ActionListView(ctk.CTkFrame):
         for a in self.actions:
             if not getattr(a, "vouched", False):
                 return a
+        return self.actions[0]
+
+    def first_button_action(self) -> TimeAction | None:
+        if not self.actions:
+            return None
         return self.actions[0]
 
     # -------- internal --------
@@ -138,11 +143,14 @@ class ActionListView(ctk.CTkFrame):
             self._hovered_btn = None
 
     def _handle_click(self, index: int):
+        # Disallow clicks past voucher capacity (sorted index rule)
+        if self._vouchers is not None:
+            total = int(getattr(self._vouchers, "local", 0)) + int(getattr(self._vouchers, "used_count", 0))
+            if index >= total:
+                return  # <-- unclickable
+
         if self.on_click:
             self.on_click(index)
-
-        # Instant visual feedback (no waiting for update_gui tick)
-        self.refresh(now=datetime.now(), vouchers=None)
 
     def _format_time(self, action: TimeAction) -> str:
         fmt = self.time_format() if callable(self.time_format) else str(self.time_format)
@@ -214,26 +222,30 @@ class ActionListView(ctk.CTkFrame):
 
         icon = self._choose_icon(action)
         text = f"{self._format_time(action)} | {self._format_remaining(action, now)}"
-
         state = "disabled" if self._disabled(action) else "normal"
 
-        # Cache + minimal updates:
-        # - Don't stomp fg_color while hovered (prevents hover being overwritten every tick)
-        # - Still update hover_color, text, image, state, etc.
+        # --- NEW: disable hover past voucher threshold ---
+        hover_enabled = True
+        if self._vouchers is not None:
+            total = int(getattr(self._vouchers, "local", 0)) + int(getattr(self._vouchers, "used_count", 0))
+            if index >= total:
+                hover_enabled = False
+
+        # If hover disabled, make hover_color identical to fg (no visual change)
+        hover_color = hv if hover_enabled else fg
+
+        sig = (action.kind, action.when, bool(getattr(action, "vouched", False)))
+
         desired = {
             "text": text,
             "image": icon,
-            "hover_color": hv,
+            "hover_color": hover_color,
             "state": state,
+            "hover": hover_enabled,   # <-- CTkButton supports this
         }
 
-        # Only set fg_color when not hovered, otherwise we break CTk's hover paint
-        if self._hovered_btn is not btn:
-            desired["fg_color"] = fg
-
-        # Static config (can be set once, but harmless to include in delta logic)
         desired_static = {
-            "compound": "right",   # icon on right
+            "compound": "right",
             "anchor": "e",
             "text_color": "white",
             "corner_radius": 0,
@@ -243,17 +255,28 @@ class ActionListView(ctk.CTkFrame):
         last = getattr(btn, "_last", {})
         updates = {}
 
+        force_fg = last.get("__sig") != sig
+        desired["__sig"] = sig   # store into cache (we'll filter it out of configure below)
+
+        if force_fg or (not hover_enabled) or (self._hovered_btn is not btn):
+            desired["fg_color"] = fg
+
         for k, v in desired_static.items():
+            if k.startswith("__"):
+                continue
             if last.get(k) != v:
                 updates[k] = v
 
         for k, v in desired.items():
+            if k.startswith("__"):
+                continue
             if last.get(k) != v:
                 updates[k] = v
 
         if updates:
             btn.configure(**updates)
             last.update(updates)
+            last["__sig"] = sig
             btn._last = last  # type: ignore[attr-defined]
 
         btn._icon_ref = icon  # type: ignore[attr-defined]
