@@ -1,5 +1,10 @@
 import os
 from libuniversal import Paths, app_base_dir, resource_path
+from PIL import Image, ImageTk, ImageDraw
+from customtkinter import CTkImage
+
+canvas_img_cache = {}          # cache PhotoImage objects so clicks don't stutter
+_canvas_shape_cache = {}
 
 def storage_dir() -> str:
     """
