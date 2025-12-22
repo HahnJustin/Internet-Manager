@@ -12,7 +12,6 @@ from ui.images import get_time_action_icon
 
 COLOR_AMOUNT = 100
 
-
 def _rgb_to_hex(rgb: tuple[int, int, int]) -> str:
     r, g, b = rgb
     return f"#{int(r):02x}{int(g):02x}{int(b):02x}"
@@ -58,6 +57,10 @@ class ActionListView(ctk.CTkFrame):
 
         self.buttons: list[ctk.CTkButton] = []
         self._last_now = datetime.now()
+
+        # Make the list background match the "far away" button gray
+        far_rgb = (69, 75, 92)
+        self.configure(fg_color=_rgb_to_hex(far_rgb))
 
         # Track hover by *button object* so reorder won't break hover handling.
         self._hovered_btn: Optional[ctk.CTkButton] = None
@@ -168,6 +171,12 @@ class ActionListView(ctk.CTkFrame):
             return self.voucher_color
         return self._gradient_color(action, now)
 
+    def _text_color(self, action: TimeAction) -> str:
+        # Non-shutdown times use pearly white
+        if action.kind != TimeActionKind.SHUTDOWN:
+            return "#ffffff"
+        return "white"  # keep shutdown as-is (or also "#ffffff" if you want identical)
+
     def _disabled(self, action: TimeAction) -> bool:
         # match your old UI: enforced + up were disabled
         # (Voucher/Retrovoucher are UI icons, not actual buttons)
@@ -241,13 +250,13 @@ class ActionListView(ctk.CTkFrame):
             "image": icon,
             "hover_color": hover_color,
             "state": state,
-            "hover": hover_enabled,   # <-- CTkButton supports this
+            "hover": hover_enabled,
+            "text_color": self._text_color(action),
         }
 
         desired_static = {
             "compound": "right",
             "anchor": "e",
-            "text_color": "white",
             "corner_radius": 0,
             "border_width": 0,
         }
