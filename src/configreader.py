@@ -19,6 +19,8 @@ VOUCHER_ODDS = 65
 DEFAULT_VOUCHER_LIMIT = 5
 DEFAULT_LOOT_BOX_LIMIT = 5
 
+TIME_FMT = "%m/%d/%y %H:%M:%S"
+
 cfg = None
 json_data = {}
 json_time_data = {}
@@ -191,7 +193,10 @@ def reset_relapse_time():
         save_storage()
 
 def str_to_datetime(time: str) -> datetime:
-    return datetime.strptime(time, '%m/%d/%y %H:%M:%S')
+    return datetime.strptime(time, TIME_FMT)
+
+def datetime_to_str(time: datetime) -> str:
+    return time.strftime(TIME_FMT)
 
 def get_json_path():
     return os.path.join(application_path, Paths.JSON_FILE.value)

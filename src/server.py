@@ -110,7 +110,7 @@ def update():
     if data.datetime > now:
         return
     # vouched used condition
-    if str(data) in json_data[StorageKey.VOUCHERS_USED]:
+    if configreader.datetime_to_str(data.datetime) in json_data[StorageKey.VOUCHERS_USED]:
         play_sfx("vouched.wav")
         used_voucher_today = True
         print(f"{data} - [VOUCHED] {data.action}")
@@ -152,9 +152,6 @@ def run_function_in_minute(func):
     thread.daemon = True
     thread.start()
 
-def string_now():
-    return  datetime.strftime(datetime.now(), '%m/%d/%y %H:%M:%S')
-
 def sort_data():
     global time_datas
     time_datas = sorted(time_datas, key=lambda x: x.datetime)
@@ -187,14 +184,41 @@ def get_last_relapse() -> datetime:
 def cull_vouchers():
     global cutoff_time
     global used_voucher_today
-    
+    global json_data
+    global now
+
     last_cutoff = cutoff_time - timedelta(days=1)
-    for i in reversed(range(len(json_data[StorageKey.VOUCHERS_USED]))):
-        vouched_time = json_data[StorageKey.VOUCHERS_USED][i]
-        vouched_datetime = configreader.str_to_datetime(vouched_time)
-        print(f"Culling Voucher {i} {vouched_datetime}")
+
+    used_list = json_data.get(StorageKey.VOUCHERS_USED, [])
+    refunded = 0
+
+    for i in reversed(range(len(used_list))):
+        s = used_list[i]
+
+        # 1) Migration: remove junk entries that aren't TIME_FMT
+        try:
+            vouched_datetime = configreader.str_to_datetime(s)
+        except Exception:
+            # This is your old "TimeAction(...)" bug entry
+            used_list.pop(i)
+            refunded += 1
+            continue
+
+        # 2) Normal behavior: drop vouchers older than last cutoff
         if last_cutoff > vouched_datetime:
-            json_data[StorageKey.VOUCHERS_USED].pop(i)
+            used_list.pop(i)
+
+    # Write back
+    json_data[StorageKey.VOUCHERS_USED] = used_list
+
+    # Refund only the malformed ones we removed (clamp to limit)
+    if refunded > 0:
+        limit = json_data.get(StorageKey.VOUCHER_LIMIT, 999999)
+        json_data[StorageKey.VOUCHER] = min(
+            limit,
+            json_data.get(StorageKey.VOUCHER, 0) + refunded
+        )
+
     configreader.force_storage(json_data)
     used_voucher_today = False
     
@@ -206,10 +230,10 @@ def play_sfx(sfx : str):
             playsound(resource_path(Paths.SFX_FOLDER + '\\' + sfx))
 
 
-if not pyuac.isUserAdmin():
+""" if not pyuac.isUserAdmin():
    print("Re-launching as admin!")
    pyuac.runAsAdmin()
-   sys.exit()
+   sys.exit() """
 
 # Getting Application Path - Thanks Max Tet
 if getattr(sys, 'frozen', False):
@@ -240,7 +264,7 @@ json_data = {}
 if os.path.isfile(configreader.get_json_path()):
    json_data = configreader.get_storage()
 else:
-   json_data = {StorageKey.VOUCHER:3, StorageKey.SINCE_LAST_RELAPSE: string_now(),
+   json_data = {StorageKey.VOUCHER:3, StorageKey.SINCE_LAST_RELAPSE: configreader.now_datetime_to_str(),
                 StorageKey.VOUCHER_LIMIT : 5, StorageKey.VOUCHERS_USED : [],
                 StorageKey.MANUAL_USED : False}
    
@@ -248,7 +272,7 @@ json_time_data = {}
 if os.path.isfile(configreader.get_json_time_path()):
    json_time_data = configreader.get_json_time()
 else:
-   json_time_data = {TimeKey.LAST_TIME_ACTIVE: string_now()}
+   json_time_data = {TimeKey.LAST_TIME_ACTIVE: configreader.now_datetime_to_str()}
 
 
 if StorageKey.SINCE_LAST_RELAPSE in json_data:
@@ -264,7 +288,7 @@ configreader.force_storage(json_data)
 
 if StorageKey.VOUCHERS_USED in json_data:
     for _time in json_data[StorageKey.VOUCHERS_USED]:
-        used_time = datetime.strptime(_time, '%m/%d/%y %H:%M:%S')
+        used_time = configreader.str_to_datetime(_time)
         if now > used_time:
             used_voucher_today = True
             break

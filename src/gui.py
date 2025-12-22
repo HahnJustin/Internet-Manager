@@ -29,6 +29,14 @@ from ui.watermark_overlay import WatermarkOverlay
 from ui.loot_overlay import LootOverlay
 from ui.status_overlay import StatusOverlay
 from ui.bottom_overlay import BottomOverlay
+from domain.models import TimeAction, TimeActionKind
+from domain.state import AppState, VoucherState, LootUIState
+from domain.rules import compute_cutoff, compute_streak, clamp  # or keep your clamp if you prefer
+from controllers.time_controller import TimeController
+from controllers.ui_scheduler import Repeater
+from client.api_service import ApiService
+from ui.action_list_view import ActionListView
+from configreader import str_to_datetime, datetime_to_str
 
 SOFTWARE_VERSION_V_LESS = '1.2.1'
 SOFTWARE_VERSION = "v" + SOFTWARE_VERSION_V_LESS
@@ -115,119 +123,34 @@ global date_label
 global time_label
 global sel
 
-class time_action_data():
-    def __init__(self, _time, button):
-        self.datetime = _time
-        self.button = button
-        self.vouched = False
-        self.button.configure(image=get_button_icon(self),
-                              compound="right",
-                              anchor='e', 
-                              corner_radius=0, 
-                              command= self.click,
-                              text_color_disabled="white")
+def build_time_actions(cfg, now: datetime) -> list[TimeAction]:
+    tomorrow = now + timedelta(days=1)
 
-    def click(self):
-        global local_vouchers
-        global internet_on
-        global time_action_buttons
-        global local_vouchers_used
+    def parse_target(hhmmss: str) -> datetime:
+        t = datetime.strptime(hhmmss, "%H:%M:%S").replace(year=now.year, month=now.month, day=now.day)
+        if now > t:
+            t = t.replace(year=tomorrow.year, month=tomorrow.month, day=tomorrow.day)
+        return t
 
-        index = time_action_buttons.index(self)
-        can_vouch = True
-        for i in reversed(range(index)):
-            button = time_action_buttons[i] 
-            if not button.vouched and type(button) != internet_up_data:
-                can_vouch = False
-                break
-        
-        if not self.vouched and local_vouchers > 0 and internet_on and can_vouch:
-            self.make_vouched()
-            local_vouchers_used += 1
-            local_vouchers -= 1
-            client_api.do_request_async(Actions.USED_VOUCHER, str(self))
-        elif self.vouched:
-            for i in range(index,len(time_action_buttons)):
-                button = time_action_buttons[i] 
-                if button.vouched:
-                    button.make_unvouched()
-                    local_vouchers += 1
-                    local_vouchers_used -= 1
-                    client_api.do_request_async(Actions.UNUSED_VOUCHER, str(button))
-        update_voucher_label()
+    actions: list[TimeAction] = []
 
-        if index == 0:
-            update_help_colors(self)
+    for t in cfg[ConfigKey.SHUTDOWN_TIMES]:
+        actions.append(TimeAction(when=parse_target(t), kind=TimeActionKind.SHUTDOWN))
 
-    def make_vouched(self):
-        date_time = self.datetime.strftime(time_format)
-        vouched_color = Color(VOUCHED_COLOR)
-        hvr_color = Color(rgb=(clamp(vouched_color.red/1.4,0,1), clamp(vouched_color.green/1.4,0,1), clamp(vouched_color.blue/1.2,0,1)))
-        self.button.configure(text=f"{date_time} | -:--", fg_color=VOUCHED_COLOR, hover_color=str(hvr_color), image=get_image(Paths.ASSETS_FOLDER + "/mini_voucher.png"))
-        self.vouched = True
+    for t in cfg[ConfigKey.ENFORCED_SHUTDOWN_TIMES]:
+        actions.append(TimeAction(when=parse_target(t), kind=TimeActionKind.ENFORCED_SHUTDOWN))
 
-    def make_unvouched(self):
-        self.button.configure(image=get_button_icon(self), compound="right", anchor='e', corner_radius=0, command= self.click)
-        self.update_gui()
-        self.update_color()
-        self.vouched = False
+    for t in cfg[ConfigKey.UP_TIMES]:
+        actions.append(TimeAction(when=parse_target(t), kind=TimeActionKind.INTERNET_UP))
 
-    def update_gui(self):
-        global now
+    return sorted(actions, key=lambda a: a.when)
 
-        delta = self.datetime - now
-        time_left = ':'.join(str(delta).split(':')[:2])
-        date_time = self.datetime.strftime(time_format)
-        self.button.configure(text=f"{date_time} | {time_left}")
-
-    def update_color(self):
-        color = self.get_color()
-        hvr_color = Color(rgb=(color.red/1.4, color.green/1.4, color.blue/1.2))
-        self.button.configure(fg_color=str(self.get_color()), hover_color=str(hvr_color))
-
-    def get_color(self) -> Color:
-        delta = self.datetime - now
-        if self.datetime <= now:
-            color_index = 0
-        else:
-            delta_scaled = int(delta.total_seconds() ** 1.4) / int(60 * 60)
-            color_index = clamp(int(delta_scaled * (COLOR_AMOUNT / 100)), 0, COLOR_AMOUNT-1)
-        return Color('#%02x%02x%02x' % tuple(map(round, self.color_list[color_index])))
-
-    def get_fg_color(self) -> Color:
-        return self.button.cget("fg_color")
-
-    def get_hv_color(self) -> Color:
-        return self.button.cget("hover_color")
-
-    def __str__(self) -> str:
-        return datetime.strftime(self.datetime, '%m/%d/%y %H:%M:%S')
-    
-class shutdown_data(time_action_data):
-    def __init__(self, _time, button):
-        self.color_list = shutdown_colors
-        super(shutdown_data, self).__init__(_time, button)
-
-class enforced_shutdown_data(time_action_data):
-    def __init__(self, _time, button):
-        self.color_list = enforced_colors
-        super(enforced_shutdown_data, self).__init__(_time, button)
-
-class internet_up_data(time_action_data):
-    def __init__(self, _time, button):
-        self.color_list = up_colors
-        super(internet_up_data, self).__init__(_time, button)
-
-def get_button_icon(label_data : time_action_data) -> CTkImage:
-    path = ""
-    if type(label_data) == shutdown_data:
-        path = Paths.ASSETS_FOLDER + "/no_globe.png"
-    elif type(label_data) == internet_up_data:
-        path = Paths.ASSETS_FOLDER + "/globe.png"
-    else:
-        path = Paths.ASSETS_FOLDER + "/skull_globe.png"
-    return get_image(path)
-
+def apply_vouched_from_storage(actions: list[TimeAction], json_data) -> None:
+    used = set(json_data.get(StorageKey.VOUCHERS_USED, []))
+    for a in actions:
+        if a.kind == TimeActionKind.SHUTDOWN and datetime_to_str(a.when) in used:
+            a.vouched = True
+            
 def every(delay, task):
     next_time = time.time() + delay
     while True:
@@ -238,89 +161,32 @@ def every(delay, task):
             traceback.print_exc()
         next_time += (time.time() - next_time) // delay * delay + delay
 
-def clamp(n, smallest, largest): return max(smallest, min(n, largest))
+def update_help_colors_from_action(action: TimeAction | None):
+    if action is None:
+        return
+    fg, hv = action_list.get_colors(action, now=state.now)
+    help_frame.configure(fg_color=fg)
+    help_icon.configure(fg_color=fg, hover_color=hv)
 
 def update_gui():
-    global used_manual_override
-    global used_voucher_today
-    global time_action_buttons
-    global json_data
-    global now
-    global cutoff_time
-    global date_label
-    global time_label
-    global internet_on
-    global local_vouchers_used
+    time_controller.tick()  # updates state.now, handles rollover, triggers events
 
-    now = datetime.now()
-
-    (_date, _time) = get_datetime()
+    _date, _time = get_datetime()
     date_label.configure(text=_date)
     time_label.configure(text=_time)
 
-    # Soonest time delta 
-    soonest_data = next((d for d in time_action_buttons if not d.vouched), None)
-    if soonest_data is None:
+    # update "time until next"
+    # easiest: compute from controller actions after tick
+    now = state.now
+    next_action = next((a for a in time_controller.actions if a.when > now and not getattr(a, "vouched", False)), None)
+    if next_action is None:
         time_until_label.configure(text="--:--")
-        return
+    else:
+        delta = next_action.when - now
+        time_until_label.configure(text=":".join(str(delta).split(":")[:2]))
 
-    soonest_time_delta = soonest_data.datetime  - now
-    color = soonest_data.get_color()
-    hvr_color = Color(rgb=(clamp(color.red*1.4,0,1), clamp(color.green*1.4,0,1), clamp(color.blue*1.4,0,1)))
-    time_until_label.configure(text=':'.join(str(soonest_time_delta).split(':')[:2]), text_color=str(hvr_color))
-
-    if now > cutoff_time:
-        recalculate_streak()
-        recalculate_cutoff_time()
-        used_voucher_today = False
-        used_manual_override = False
-        bottom.toggle_manual_icon(used_manual_override)
-        bottom.toggle_vouched_icon(used_voucher_today)
-
-    # shutdown label maintenance
-    for data in time_action_buttons:
-        if not data.vouched:
-            data.update_gui()
-
-        # actual shutdown
-        if data.datetime > now:
-            continue
-        if data.vouched:
-            show_status("Voucher Consumed", True)
-            used_voucher_today = True
-            bottom.toggle_vouched_icon(used_voucher_today)
-            local_vouchers_used -= 1
-            update_voucher_label()
-        elif type(data) == shutdown_data or type(data) == enforced_shutdown_data:
-            set_icon(False)
-            show_status("Internet Shutdown Triggered", False)
-            bottom.toggle_relapse_button(True)
-            toggle_globe_animation(False)
-            internet_on = False
-            run_function_in_five_secs(lambda : check_new_loot())
-        elif type(data) == internet_up_data:
-            set_icon(True)
-            show_status("Internet Reboot Triggered", True)
-            bottom.toggle_relapse_button(False)
-            toggle_globe_animation(True)
-            internet_on = True
-        recalculate_time(data)
-        sort_labels()
-        update_button_color()
-
-def update_button_color():
-    for data in time_action_buttons:
-        if not data.vouched:
-            data.update_color()
-
-    if len(time_action_buttons) > 0:
-        update_help_colors(time_action_buttons[0])
-
-def recalculate_time(data: time_action_data):
-   global now, tomorrow
-   tomorrow = now + timedelta(days=1)
-   data.datetime = data.datetime.replace(year=tomorrow.year, month=tomorrow.month, day=tomorrow.day)
-   data.make_unvouched()
+    action_list.refresh(now=state.now, vouchers=state.vouchers)
+    update_help_colors_from_action(action_list.first_action())
 
 def recalculate_cutoff_time():
     global cutoff_time
@@ -390,15 +256,6 @@ def create_gradient(colors):
             gradient.append(lerp_color(colors[i], colors[i+1], j / COLOR_AMOUNT))
     return gradient
 
-def sort_labels():
-    global time_action_buttons
-    time_action_buttons = sorted(time_action_buttons, key=lambda x: x.datetime)
-    for data in time_action_buttons:
-        data.button.pack_forget()
-
-    for data in time_action_buttons:
-        data.button.pack(ipadx=10, ipady=10, fill="both")
-
 def update_streak_graphics():
     delta = now - last_relapse
     # Dividing by the amount of seconds in a day
@@ -412,9 +269,9 @@ def update_streak_graphics():
     streak_label.configure(text=f"Streak: {streak}")
 
 def update_voucher_label():
-    voucher_label.configure(text=f"x{local_vouchers}")
+    voucher_label.configure(text=f"x{state.vouchers.local}")
 
-    if local_vouchers + local_vouchers_used >= voucher_limit:
+    if state.vouchers.local + state.vouchers.used_count >= state.vouchers.limit:
         voucher_label.configure(text_color=FULL_COLOR)
     else:
         voucher_label.configure(text_color="#ffffff")
@@ -443,33 +300,6 @@ def refresh_loot_count_async():
         update_loot_button()
 
     client_api.do_request_async(Actions.LOOT_CHECK, MessageKey.ALL_LOOT_BOXES, on_count)
-
-def time_action_button_create(time : str, label_type : ConfigKey) -> time_action_data:
-    global tomorrow
-    global now
-    global local_vouchers_used
-
-    target = datetime.strptime(time, '%H:%M:%S')
-    target = target.replace(year=now.year, month=now.month, day=now.day)
-
-    if now > target:
-       target = target.replace(year=tomorrow.year, month=tomorrow.month, day=tomorrow.day)
-
-    action_time_button = customtkinter.CTkButton(widget_frame, text=target)
-    action_time_button.pack(ipadx=10, ipady=10, fill="both")
-
-    if label_type == ConfigKey.SHUTDOWN_TIMES:
-        data = shutdown_data(target, action_time_button)
-    elif label_type == ConfigKey.ENFORCED_SHUTDOWN_TIMES:
-        data = enforced_shutdown_data(target, action_time_button)
-        action_time_button.configure(state="disabled")
-    else:
-        data = internet_up_data(target, action_time_button)
-        action_time_button.configure(state="disabled")
-    time_action_buttons.append(data)
-    if str(data) in json_data[StorageKey.VOUCHERS_USED]:
-        data.make_vouched()
-        local_vouchers_used += 1
 
 def set_icon(internet_on : bool):
     if internet_on:
@@ -817,13 +647,6 @@ def toggle_globe_animation(enabled : bool):
         app.after(1, _play_gif_once, right_globe_gif, globe_disable_right_frames)
     globe_on = enabled
 
-
-def update_help_colors(data : time_action_data):
-    fg_color = data.get_fg_color()
-    hv_color = data.get_hv_color()
-    help_frame.configure(fg_color= fg_color)
-    help_icon.configure(fg_color= fg_color, hover_color= hv_color)
-
 def register_font(font_path):
     if sys.platform == "win32":
         FR_PRIVATE = 0x10
@@ -887,13 +710,35 @@ def _ensure_loot_canvas_items():
 
     scene.layout()
 
-def schedule_update_gui():
-    update_gui()
-    app.after(1000, schedule_update_gui)
+def handle_time_event(evt: str, action: TimeAction | None):
+    if evt == "day_rollover":
+        bottom.toggle_manual_icon(state.used_manual_override)
+        bottom.toggle_vouched_icon(state.vouchers.used_today)
+        update_streak_graphics()
 
-def schedule_update_button_color():
-    update_button_color()
-    app.after(60_000, schedule_update_button_color)
+    elif evt == "voucher_consumed":
+        show_status("Voucher Consumed", True)
+        bottom.toggle_vouched_icon(True)
+        update_voucher_label()
+
+    elif evt == "shutdown_triggered":
+        set_icon(False)
+        show_status("Internet Shutdown Triggered", False)
+        bottom.toggle_relapse_button(True)
+        toggle_globe_animation(False)
+        run_function_in_five_secs(lambda: check_new_loot())
+
+    elif evt == "internet_up_triggered":
+        set_icon(True)
+        show_status("Internet Reboot Triggered", True)
+        bottom.toggle_relapse_button(False)
+        toggle_globe_animation(True)
+
+def on_action_clicked(index: int):
+    before = state.vouchers.local
+    time_controller.on_action_clicked(index)   # change controller to accept action
+    if state.vouchers.local != before:
+        update_voucher_label()
 
 # no clue why this works, but it allows the taskbar icon to be custom
 myappid = 'dalichrome.internetmanager.' + SOFTWARE_VERSION_V_LESS # arbitrary string
@@ -984,6 +829,32 @@ widget_bg_color = '#404654'
 ctx = AppContext(app=app) 
 client_api.set_app(ctx)
 
+api = ApiService(ctx)  # wrapper around client_api
+
+now = datetime.now()
+cutoff_time = compute_cutoff(now, cfg[ConfigKey.STREAK_SHIFT])
+
+last_relapse = get_last_relapse()  # you can keep your existing helper for now
+streak = compute_streak(now, last_relapse)
+
+state = AppState(
+    now=now,
+    cutoff_time=cutoff_time,
+    internet_on=True,
+    admin_on=True,
+    globe_on=True,
+    streak=streak,
+    last_relapse=last_relapse,
+    vouchers=VoucherState(
+        local=local_vouchers,
+        used_today=used_voucher_today,
+        used_count=local_vouchers_used,
+        limit=voucher_limit
+    ),
+    loot=LootUIState(),
+    used_manual_override=used_manual_override
+)
+
 # Shutdown label parent
 widget_frame = customtkinter.CTkFrame(app, fg_color=widget_bg_color, corner_radius=0)
 widget_frame.pack(side='left', fill="y")
@@ -1024,19 +895,31 @@ up_colors = create_gradient(UP_COLORS)
 
 time_action_buttons = []
 
-# Intializing shutdown labels
-for shutdown_time in cfg[ConfigKey.SHUTDOWN_TIMES]:
-    time_action_button_create(shutdown_time, ConfigKey.SHUTDOWN_TIMES)
+# Build domain actions
+now = datetime.now()
+actions = build_time_actions(cfg, now)
+apply_vouched_from_storage(actions, json_data)
 
-# Intializing enforced shutdown labels
-for enforced_shutdown_time in cfg[ConfigKey.ENFORCED_SHUTDOWN_TIMES]:
-    time_action_button_create(enforced_shutdown_time, ConfigKey.ENFORCED_SHUTDOWN_TIMES)
+time_controller = TimeController(
+    state=state,
+    api=api,
+    shift_hhmm=cfg[ConfigKey.STREAK_SHIFT],
+    on_event=handle_time_event,   # define below
+)
+time_controller.set_actions(actions)
 
-# Intializing internet up labels
-for up_time in cfg[ConfigKey.UP_TIMES]:
-    time_action_button_create(up_time, ConfigKey.UP_TIMES)
+action_list = ActionListView(
+    parent=widget_frame,
+    actions=actions,
+    time_format=lambda: time_format,
+    voucher_color=VOUCHED_COLOR,
+    shutdown_colors=shutdown_colors,
+    enforced_colors=enforced_colors,
+    up_colors=up_colors,
+    on_click=on_action_clicked,
+)
 
-sort_labels()
+action_list.pack(side="top", fill="both", expand=True)  # <-- REQUIRED
 
 # Adding Time
 date_label = customtkinter.CTkLabel(top_frame, text_color="#666e7a", text="Date", font=("Cloister Black", 25), pady=0)
@@ -1052,10 +935,7 @@ status_label = customtkinter.CTkLabel(app, text=f"", text_color="white", font=("
 status_label.pack_forget()
 
 # Admin Check
-if not client_api.do_request(Actions.ADMIN_STATUS, ""):
-    show_status("Server is not running in Admin", False)
-    admin_on = False
-
+admin_on = client_api.do_request(Actions.ADMIN_STATUS, "")
 
 if admin_on:
     # left globe
@@ -1131,7 +1011,6 @@ help_dialogue.init(ctx, SOFTWARE_VERSION)
 
 bottom.set_relapse_callback(manual_override_dialogue.manual_override)
 
-
 scene = CanvasScene(
     canvas=center_canvas,
     background=background,
@@ -1147,6 +1026,8 @@ center_canvas.bind("<Configure>", scene.layout)
 
 background.init(center_canvas)
 watermark.init(center_canvas)
+
+show_status("Server is not running in Admin", not admin_on)
 
 # Also force one recenter after layout settles (belt + suspenders)
 app.after(50, scene.layout)
@@ -1196,7 +1077,7 @@ refresh_loot_count_async()
 help_icon = CTkButton(help_frame,
                         hover_color=app_bg_color,
                         text="",
-                        command= help_dialogue,
+                        command= help_dialogue.help_dialogue,
                         fg_color= widget_bg_color,
                         image=get_image(Paths.ASSETS_FOLDER + "/info_icon.png"),
                         anchor='w', 
@@ -1207,8 +1088,9 @@ help_icon.pack(anchor='w', expand=True)
 
 
 # Run time update
-schedule_update_gui()
-schedule_update_button_color()
+ui_tick = Repeater(app)
+ui_tick.every(1000, update_gui)         # every second
+ui_tick.every(60_000, action_list.recolor)  # if you want a separate recolor pass
 
 # Run app
 app.mainloop()

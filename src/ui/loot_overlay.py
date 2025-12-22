@@ -55,7 +55,7 @@ class LootOverlay:
         self.idle_text = idle_text
         self.state = "idle"
 
-        self.loot_img_tk = get_canvas_photo(asset_rel_path)
+        self.loot_img_tk = get_canvas_photo(self.canvas, asset_rel_path)
         self.canvas.itemconfigure(self.loot_item, image=self.loot_img_tk, state="normal")
         self.loot_text.set_state("normal")
         self.loot_text.set_text(self.idle_text)

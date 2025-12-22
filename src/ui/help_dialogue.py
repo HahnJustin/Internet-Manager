@@ -37,7 +37,7 @@ def help_dialogue():
     info_title_label.pack(side='top')
 
     # Software Version Label
-    info_string = f"Internet Manager {get_version()}"
+    info_string = f"Internet Manager {_version}"
     software_v_label = CTkLabel(top, text=info_string, font=('arial', 18), pady=2.5)
     software_v_label.pack(side='top', fill='x', padx=20)
 
