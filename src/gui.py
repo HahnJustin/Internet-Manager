@@ -4,6 +4,7 @@ import yaml
 import math
 import ctypes
 import random
+import sys
 from client.app_context import AppContext
 from libuniversal import *
 from assets import *
@@ -35,6 +36,8 @@ COLOR_AMOUNT = 100
 SHUTDOWN_COLORS = [(224, 0, 0), (69, 75, 92),(0, 0, 255),(0, 0, 0)]
 ENFORCED_COLORS = [(48, 0, 9), (69, 75, 92),(0, 0, 255),(0, 0, 0)]
 UP_COLORS = [(0, 144, 227), (69, 75, 92),(0, 0, 255),(0, 0, 0)]
+
+LOOT_FONT = ("Arial", 10)
 
 MILITARY_TIME = "%H:%M:%S"
 NORMAL_TIME = "%#I:%M:%S %p"
@@ -89,7 +92,6 @@ box_origin = None        # None | "storage" | "found"
 box_consumed = False     # set True when user opens it
 hide_after_id = None     # app.after id so we can cancel
 
-admin_on = True
 stop_gifs = False
 
 status_timer = None
@@ -97,13 +99,11 @@ lootbox_timer = None
 current_lootbox = None
 internet_box_button = None
 
-global now
-global colors
-global time_action_buttons
+_icon_img_ref = None
+
 global json_data
 global date_label
 global time_label
-global sel
 
 def build_time_actions(cfg, now: datetime) -> list[TimeAction]:
     tomorrow = now + timedelta(days=1)
@@ -195,16 +195,16 @@ def create_gradient(colors):
     return gradient
 
 def update_streak_graphics():
-    delta = now - last_relapse
-    # Dividing by the amount of seconds in a day
+    delta = state.now - state.last_relapse
     if delta.total_seconds() / 86400 <= 1:
         streak_icon.pack_forget()
         streak_label.pack(side='top', anchor='center', expand=False)
     else:
         streak_icon.pack(side='left', anchor='e', expand=True)
         streak_label.pack(side='right', anchor='w', expand=True)
-    streak_icon.configure(image=get_streak_icon(streak))
-    streak_label.configure(text=f"Streak: {streak}")
+
+    streak_icon.configure(image=get_streak_icon(state.streak))
+    streak_label.configure(text=f"Streak: {state.streak}")
 
 def update_voucher_label():
     voucher_label.configure(text=f"x{state.vouchers.local}")
@@ -251,14 +251,15 @@ def refresh_loot_count_async():
     client_api.do_request_async(Actions.LOOT_CHECK, MessageKey.ALL_LOOT_BOXES, on_count)
 
 def set_icon(internet_on : bool):
+    global _icon_img_ref
     if internet_on:
         app.iconbitmap(resource_path(Paths.ASSETS_FOLDER + "/globe.ico"))
-        img = tkinter.PhotoImage(file=resource_path(Paths.ASSETS_FOLDER + "/globex5.png"))
+        _icon_img_ref = tkinter.PhotoImage(file=resource_path(Paths.ASSETS_FOLDER + "/globex5.png"))
     else:
         app.iconbitmap(resource_path(Paths.ASSETS_FOLDER + "/globe_no.ico"))
-        img = tkinter.PhotoImage(file=resource_path(Paths.ASSETS_FOLDER + "/no_globex5.png"))
+        _icon_img_ref = tkinter.PhotoImage(file=resource_path(Paths.ASSETS_FOLDER + "/no_globex5.png"))
     #custom_img = customtkinter.Ctkim
-    app.wm_iconphoto(True, img)
+    app.wm_iconphoto(True, _icon_img_ref)
 
 def get_frames(img):
     img = resource_path(img)
@@ -302,34 +303,24 @@ def _next_frame(frame : customtkinter.CTkImage, label, frames, restart=False):
     label.configure(image=frame)
 
 def relapse(top : customtkinter.CTkToplevel):
-    global streak
-    global last_relapse
-    global json_data
-    global internet_on
-    global used_manual_override
-
     top.destroy()
-    streak = 0
+    state.streak = 0
     show_status("User succumbed to temptation", True)
     client_api.do_request_async(Actions.RELAPSE, "")
 
-    used_manual_override = True
+    state.used_manual_override = True
     json_data[StorageKey.SINCE_LAST_RELAPSE] = datetime.strftime(datetime.now(), "%m/%d/%y %H:%M:%S")
-    last_relapse = get_last_relapse(json_data, state.cutoff_time)
-    state.last_relapse = last_relapse
-    state.streak = compute_streak(datetime.now(), last_relapse)
+    state.last_relapse = get_last_relapse(json_data, state.cutoff_time)
+    state.streak = compute_streak(datetime.now(), state.last_relapse)
     update_streak_graphics()
     bottom.toggle_relapse_button(False)
     toggle_globe_animation(True)
     set_icon(True)
-    bottom.toggle_manual_icon(used_manual_override)
-    internet_on = True
+    bottom.toggle_manual_icon(state.used_manual_override)
+    state.internet_on = True
 
 def get_streak() -> int:
-    return streak
-
-def get_version() -> str:
-    return SOFTWARE_VERSION
+    return state.streak
 
 def get_last_relapse(storage: dict, cutoff_time: datetime) -> datetime:
     raw = storage[StorageKey.SINCE_LAST_RELAPSE]  # or .value depending on your enum
@@ -558,10 +549,8 @@ def check_new_loot():
 def toggle_globe_animation(enabled : bool):
     global globe_frames
     global stop_gifs
-    global internet_on
-    global globe_on
 
-    if enabled == globe_on or not admin_on:
+    if enabled == state.globe_on or not state.admin_on:
         return
 
     stop_gifs = not enabled
@@ -577,7 +566,7 @@ def toggle_globe_animation(enabled : bool):
         globe_disable_right_frames = get_frames(Paths.ASSETS_FOLDER + "/globular_off_right.gif")
         app.after(1, _play_gif_once, left_globe_gif, globe_disable_left_frames)
         app.after(1, _play_gif_once, right_globe_gif, globe_disable_right_frames)
-    globe_on = enabled
+    state.globe_on = enabled
 
 def register_font(font_path):
     if sys.platform == "win32":
@@ -593,43 +582,6 @@ def register_font(font_path):
 
 def loot_visible() -> bool:
     return loot_item is not None and center_canvas.itemcget(loot_item, "state") != "hidden"
-
-def _ensure_loot_canvas_items():
-    global loot_item, loot_text
-    if loot_item is not None:
-        return
-
-    loot_item = center_canvas.create_image(0, 0, anchor="center", state="hidden", tags=("loot",))
-
-    loot_text = gui_text.create_outlined_text(
-        center_canvas, 0, 0,
-        text="",
-        font=LOOT_FONT,
-        anchor="s",
-        fill="white",
-        outline="black",
-        thickness=2,
-        state="hidden",
-        tags=("loot", "loot_text")
-    )
-
-    def on_click(_e=None): loot_box()
-
-    def on_enter(_e=None):
-        if loot_state == "idle":
-            center_canvas.configure(cursor="hand2")
-            loot_text.set_text("Click to open!")
-
-    def on_leave(_e=None):
-        center_canvas.configure(cursor="")
-        if loot_state == "idle":
-            loot_text.set_text(loot_idle_text)
-
-    center_canvas.tag_bind(loot_item, "<Button-1>", on_click)
-    center_canvas.tag_bind(loot_item, "<Enter>", on_enter)
-    center_canvas.tag_bind(loot_item, "<Leave>", on_leave)
-
-    scene.layout()
 
 def handle_time_event(evt: str, action: TimeAction | None):
     if evt == "day_rollover":
@@ -698,7 +650,7 @@ def debug_force_offline_ui():
 
     # Stop globe animation + switch it off visually
     toggle_globe_animation(False)
-    globe_on = False
+    state.globe_on = False
 
     # Make sure labels refresh immediately
     try:
@@ -780,8 +732,8 @@ except OSError:
     f = open(Paths.CLIENT_CONFIG_FILE)
 with f:
     cfg = yaml.load(f, Loader=yaml.FullLoader)
-    host = cfg[ConfigKey.HOST]
-    port = cfg[ConfigKey.PORT]
+    host = cfg.get(ConfigKey.HOST.value, cfg.get(ConfigKey.HOST, "127.0.0.1"))
+    port = int(cfg.get(ConfigKey.PORT.value, cfg.get(ConfigKey.PORT, 65432)))
 
 client_api.init(host, port)
 
@@ -954,32 +906,7 @@ status_label = customtkinter.CTkLabel(app, text=f"", text_color="white", font=("
 status_label.pack_forget()
 
 # Admin Check
-admin_on = client_api.do_request(Actions.ADMIN_STATUS, "")
-
-if admin_on:
-    # left globe
-    globe_frames = get_frames(Paths.ASSETS_FOLDER + "/globular.gif")
-    left_globe_gif = customtkinter.CTkLabel(top_left_frame, text="", image=globe_frames[1])
-    left_globe_gif.pack(side='right', anchor='e', expand=True)
-
-    # right globe
-    right_globe_gif = customtkinter.CTkLabel(top_right_frame, text="", image=globe_frames[1])
-    right_globe_gif.pack(side='left', anchor='w', expand=True)
-
-    if state.internet_on:
-        app.after(100, _play_gif, left_globe_gif, globe_frames)
-        app.after(100, _play_gif, right_globe_gif, globe_frames)
-    else:
-        toggle_globe_animation(False)
-
-else:
-    # left caution
-    caution_right = customtkinter.CTkLabel(top_left_frame, text="", image=get_image(Paths.ASSETS_FOLDER + "/caution.png"))
-    caution_right.pack(side='right', anchor='e', expand=True)
-
-    # right caution
-    caution_left = customtkinter.CTkLabel(top_right_frame, text="", image=get_image(Paths.ASSETS_FOLDER + "/caution.png"))
-    caution_left.pack(side='left', anchor='w', expand=True)
+state.admin_on =  bool(client_api.do_request(Actions.ADMIN_STATUS, ""))
 
 # Debug turn internet on and off buttons
 if ConfigKey.DEBUG in cfg and cfg[ConfigKey.DEBUG]:
@@ -1040,16 +967,13 @@ scene = CanvasScene(
 )
 scene.init()
 
-# Bind FIRST so we never miss the first real resize
-center_canvas.bind("<Configure>", scene.layout)
-
 background.init(center_canvas)
 watermark.init(center_canvas)
 
 # Bind LAST so nobody overwrites it
 center_canvas.bind("<Configure>", scene.layout)
 
-if not admin_on:
+if not state.admin_on:
     show_status("Server is not running as Admin", False)
 
 # Also force one recenter after layout settles (belt + suspenders)
@@ -1078,11 +1002,35 @@ else:
         set_icon(False)
         bottom.toggle_relapse_button(True)
 
-streak = clamp(math.floor((now - last_relapse).total_seconds() / 86400),0,999999)
+# Globes or admin cautions
+if state.admin_on:
+    # left globe
+    globe_frames = get_frames(Paths.ASSETS_FOLDER + "/globular.gif")
+    left_globe_gif = customtkinter.CTkLabel(top_left_frame, text="", image=globe_frames[1])
+    left_globe_gif.pack(side='right', anchor='e', expand=True)
+
+    # right globe
+    right_globe_gif = customtkinter.CTkLabel(top_right_frame, text="", image=globe_frames[1])
+    right_globe_gif.pack(side='left', anchor='w', expand=True)
+
+    if state.internet_on:
+        app.after(100, _play_gif, left_globe_gif, globe_frames)
+        app.after(100, _play_gif, right_globe_gif, globe_frames)
+    else:
+        toggle_globe_animation(False)
+
+else:
+    # left caution
+    caution_right = customtkinter.CTkLabel(top_left_frame, text="", image=get_image(Paths.ASSETS_FOLDER + "/caution.png"))
+    caution_right.pack(side='right', anchor='e', expand=True)
+
+    # right caution
+    caution_left = customtkinter.CTkLabel(top_right_frame, text="", image=get_image(Paths.ASSETS_FOLDER + "/caution.png"))
+    caution_left.pack(side='left', anchor='w', expand=True)
 
 streak_icon = customtkinter.CTkLabel(bottom_frame, text="")
 streak_icon.pack(side='left', anchor='e', expand=True)
-streak_label = customtkinter.CTkLabel(bottom_frame, text=f"Streak: {streak}", text_color="white" )
+streak_label = customtkinter.CTkLabel(bottom_frame, text=f"Streak: {state.streak}", text_color="white" )
 streak_label.pack(side='right', anchor='w', expand=True)
 update_streak_graphics()
 
