@@ -231,10 +231,10 @@ def play_sfx(sfx : str):
             playsound(resource_path(Paths.SFX_FOLDER + '\\' + sfx))
 
 
-""" if not pyuac.isUserAdmin():
+if not pyuac.isUserAdmin():
    print("Re-launching as admin!")
    pyuac.runAsAdmin()
-   sys.exit() """
+   sys.exit()
 
 # Getting Application Path - Thanks Max Tet
 if getattr(sys, 'frozen', False):

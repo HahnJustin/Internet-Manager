@@ -11,6 +11,7 @@ a = Analysis(
     binaries=[],
     datas=[
         ('assets/*', 'assets'),
+		('sfx/*', 'sfx'),
     ],
     hiddenimports=[
         # 'libserver',  # usually not needed if pathex is right, but harmless
