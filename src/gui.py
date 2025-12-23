@@ -1,28 +1,18 @@
 import tkinter
 import customtkinter
-import threading
 import yaml
-import json
-import socket
-import sys
-import selectors
-import traceback
-import os.path
-import time
 import math
 import ctypes
-import webbrowser
 import random
 from client.app_context import AppContext
 from libuniversal import *
 from assets import *
 from ui.images import *
 from ui import gui_text, help_dialogue, manual_override_dialogue
-from customtkinter import CTkButton, CTkFont
-from colour import Color
-from client import message, client_api
+from customtkinter import CTkButton
+from client import client_api
 from datetime import datetime, timedelta
-from PIL import Image, ImageTk, ImageDraw
+from PIL import Image
 from ui.canvas_scene import CanvasScene
 from ui.background_overlay import BackgroundOverlay
 from ui.watermark_overlay import WatermarkOverlay
@@ -68,8 +58,6 @@ background_item = None            # canvas item id
 background_img_tk = None          # ImageTk.PhotoImage (keep ref!)
 background_last_size = (0, 0)
 
-LOOT_FONT = ("Arial", 10)     # or ("Cloister Black", 18)
-
 loot_img_tk = None
 loot_item = None
 loot_text_item = None
@@ -96,9 +84,7 @@ manual_icon_tk = None
 vouched_icon_tk = None
 relapse_bg_tk = None
 
-internet_on = True
 loot_box_openable = True
-globe_on = True
 box_origin = None        # None | "storage" | "found"
 box_consumed = False     # set True when user opens it
 hide_after_id = None     # app.after id so we can cancel
@@ -106,10 +92,6 @@ hide_after_id = None     # app.after id so we can cancel
 admin_on = True
 stop_gifs = False
 
-used_voucher_today = False
-used_manual_override = False
-local_vouchers = 0
-local_vouchers_used = 0
 status_timer = None
 lootbox_timer = None
 current_lootbox = None
@@ -150,16 +132,6 @@ def apply_vouched_from_storage(actions: list[TimeAction], json_data) -> None:
     for a in actions:
         if a.kind == TimeActionKind.SHUTDOWN and datetime_to_str(a.when) in used:
             a.vouched = True
-            
-def every(delay, task):
-    next_time = time.time() + delay
-    while True:
-        time.sleep(max(0, next_time - time.time()))
-        try:
-            task()
-        except Exception:
-            traceback.print_exc()
-        next_time += (time.time() - next_time) // delay * delay + delay
 
 def update_help_colors_from_action(action: TimeAction | None):
     if action is None:
@@ -188,24 +160,6 @@ def update_gui():
     action_list.refresh(now=state.now, vouchers=state.vouchers)
     update_help_colors_from_action(action_list.first_button_action())
 
-def recalculate_cutoff_time():
-    global cutoff_time
-    global now
-
-    cutoff_time = datetime.strptime(cfg[ConfigKey.STREAK_SHIFT], '%H:%M')
-    cutoff_time = cutoff_time.replace(year=now.year, month=now.month, day=now.day)
-
-    if now > cutoff_time:
-        cutoff_time = cutoff_time.replace(year=tomorrow.year, month=tomorrow.month, day=tomorrow.day)
-
-def recalculate_streak():
-    global streak
-    global now
-    global last_relapse
-
-    streak = clamp(math.floor((now - last_relapse).total_seconds() / 86400), 0, 999999)
-    update_streak_graphics()
-
 def get_datetime():
     now = datetime.now()
     date = now.strftime("%#m.%#d.%Y")
@@ -226,22 +180,6 @@ def show_status(text: str, positive: bool):
         scene.layout()
 
     status_after_id = app.after(60_000, _hide)
-
-def run_function_in_minute(func) -> threading.Timer:
-    thread = threading.Timer(60.0, func)
-    thread.daemon = True
-    thread.start()
-    return thread
-
-def run_function_in_five_secs(func) -> threading.Timer:
-    thread = threading.Timer(5.0, func)
-    thread.daemon = True
-    thread.start()
-    return thread
-
-def write_data_to_json():
-    with open(Paths.JSON_FILE, 'w') as f:
-        json.dump(json_data, f)
 
 def string_now():
     return  datetime.strftime(datetime.now(), '%m/%d/%y %H:%M:%S')
@@ -376,8 +314,10 @@ def relapse(top : customtkinter.CTkToplevel):
     client_api.do_request_async(Actions.RELAPSE, "")
 
     used_manual_override = True
-    json_data[StorageKey.SINCE_LAST_RELAPSE] = datetime.strftime(datetime.now(), '%m/%d/%y %H:%M:%S')
-    last_relapse = get_last_relapse()
+    json_data[StorageKey.SINCE_LAST_RELAPSE] = datetime.strftime(datetime.now(), "%m/%d/%y %H:%M:%S")
+    last_relapse = get_last_relapse(json_data, state.cutoff_time)
+    state.last_relapse = last_relapse
+    state.streak = compute_streak(datetime.now(), last_relapse)
     update_streak_graphics()
     bottom.toggle_relapse_button(False)
     toggle_globe_animation(True)
@@ -391,13 +331,10 @@ def get_streak() -> int:
 def get_version() -> str:
     return SOFTWARE_VERSION
 
-def get_last_relapse() -> datetime:
-    global json_data
-    global cfg
-    global cutoff_time
-
-    last_relapse = datetime.strptime(json_data[StorageKey.SINCE_LAST_RELAPSE], '%m/%d/%y %H:%M:%S')
-    return last_relapse.replace(hour=cutoff_time.hour, minute=cutoff_time.minute)
+def get_last_relapse(storage: dict, cutoff_time: datetime) -> datetime:
+    raw = storage[StorageKey.SINCE_LAST_RELAPSE]  # or .value depending on your enum
+    dt = datetime.strptime(raw, "%m/%d/%y %H:%M:%S")
+    return dt.replace(hour=cutoff_time.hour, minute=cutoff_time.minute, second=0, microsecond=0)
 
 def loot_box():
     global box_consumed, box_origin
@@ -576,7 +513,7 @@ def debug_get_loot_result():
 
     if voucher_amount <= 0:
         loot.set_text("There was nothing inside :(")
-    elif local_vouchers + voucher_amount + local_vouchers_used <= voucher_limit:
+    elif state.vouchers.local  + voucher_amount + state.vouchers.used_count  <= state.vouchers.limit:
         loot.set_text("You found a voucher!!!")
         loot.set_image(Paths.ASSETS_FOLDER + "/voucher.png")
     else:
@@ -710,7 +647,7 @@ def handle_time_event(evt: str, action: TimeAction | None):
         show_status("Internet Shutdown Triggered", False)
         bottom.toggle_relapse_button(True)
         toggle_globe_animation(False)
-        run_function_in_five_secs(lambda: check_new_loot())
+        app.after(100, check_new_loot)
 
     elif evt == "internet_up_triggered":
         set_icon(True)
@@ -751,10 +688,6 @@ def debug_force_offline_ui():
     DEBUG: Make the UI *look* like we're offline, without touching the server.
     Safe to call after widgets exist (status/bottom/globes).
     """
-    global internet_on, globe_on
-
-    # Force local flag (only used by some UI conditionals)
-    internet_on = False
 
     # Icon + status banner
     set_icon(False)
@@ -830,8 +763,6 @@ def debug_render_all_overlays():
 myappid = 'dalichrome.internetmanager.' + SOFTWARE_VERSION_V_LESS # arbitrary string
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
-sel = selectors.DefaultSelector()
-
 # Path to the drei font
 drei_path = resource_path(Paths.FONTS_FOLDER + '/DreiFraktur.ttf')
 register_font(drei_path)
@@ -879,16 +810,13 @@ if StorageKey.LOOT_BOX_LIMIT in json_data:
 # Defining basic time variables
 now = datetime.now()
 tomorrow = now + timedelta(days=1)
-recalculate_cutoff_time()
-
-# Defining last time since internet override, used in streak calc
-last_relapse = get_last_relapse()
 
 # Set military time or not
 if ConfigKey.MILITARY_TIME in cfg and not cfg[ConfigKey.MILITARY_TIME]:
     print("Not using military time")
     time_format = NORMAL_TIME
 
+used_voucher_today = False
 if StorageKey.VOUCHERS_USED in json_data:
     for _time in json_data[StorageKey.VOUCHERS_USED]:
         used_time = datetime.strptime(_time, '%m/%d/%y %H:%M:%S')
@@ -925,7 +853,7 @@ api = ApiService(ctx)  # wrapper around client_api
 now = datetime.now()
 cutoff_time = compute_cutoff(now, cfg[ConfigKey.STREAK_SHIFT])
 
-last_relapse = get_last_relapse()  # you can keep your existing helper for now
+last_relapse = get_last_relapse(json_data, cutoff_time)
 streak = compute_streak(now, last_relapse)
 
 state = AppState(
@@ -1038,7 +966,7 @@ if admin_on:
     right_globe_gif = customtkinter.CTkLabel(top_right_frame, text="", image=globe_frames[1])
     right_globe_gif.pack(side='left', anchor='w', expand=True)
 
-    if internet_on:
+    if state.internet_on:
         app.after(100, _play_gif, left_globe_gif, globe_frames)
         app.after(100, _play_gif, right_globe_gif, globe_frames)
     else:
@@ -1121,7 +1049,8 @@ watermark.init(center_canvas)
 # Bind LAST so nobody overwrites it
 center_canvas.bind("<Configure>", scene.layout)
 
-show_status("Server is not running in Admin", not admin_on)
+if not admin_on:
+    show_status("Server is not running as Admin", False)
 
 # Also force one recenter after layout settles (belt + suspenders)
 app.after(50, scene.layout)
@@ -1134,17 +1063,17 @@ debug_start_offline = bool(cfg.get("debug_start_offline", False))
 
 if debug_start_offline:
     debug_force_offline_ui()
-
+    state.internet_on = False
     # Delay slightly so canvas has a size and layout math is stable
     app.after(100, debug_render_all_overlays)
 else:
     if client_api.do_request(Actions.INTERNET_STATUS, ""):
-        internet_on = True
+        state.internet_on = True
         status.show("Internet is On", True)
         set_icon(True)
         bottom.toggle_relapse_button(False)
     else:
-        internet_on = False
+        state.internet_on = False
         status.show("Internet is Off", False)
         set_icon(False)
         bottom.toggle_relapse_button(True)
@@ -1196,6 +1125,3 @@ ui_tick.every(60_000, action_list.recolor)  # if you want a separate recolor pas
 
 # Run app
 app.mainloop()
-
-#Close selector
-sel.close()
