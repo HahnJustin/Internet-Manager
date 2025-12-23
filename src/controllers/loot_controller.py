@@ -9,22 +9,20 @@ from client import client_api
 from libuniversal import Paths, Actions, MessageKey
 from domain.state import AppState
 
+from typing import Optional, Callable
+
 @dataclass
 class LootController:
-    app: object                 # CTk
+    app: object
     state: AppState
-    loot_overlay: object        # LootOverlay
-    status_overlay: object      # StatusOverlay
-    scene: object               # CanvasScene
-    loot_button: object         # CTkButton
+    loot_overlay: object
+    status_overlay: object
+    scene: object
+    loot_button: object
     loot_limit: int
     local_loot_boxes: int = 0
 
-    loot_box_openable: bool = True
-    box_origin: Optional[str] = None    # None|"storage"|"found"|"debug"
-    box_consumed: bool = False
-    hide_after_id: Optional[str] = None
-    current_lootbox: Optional[str] = None
+    on_vouchers_changed: Optional[Callable[[], None]] = None 
 
     def _schedule_hide(self):
         if self.hide_after_id is not None:
@@ -181,10 +179,15 @@ class LootController:
                     "You found a voucher!!!" if added else "You found a voucher, but don't have room..."
                 )
 
+                if added and self.on_vouchers_changed:
+                    # schedule on UI thread (same as main loop)
+                    self.app.after(0, self.on_vouchers_changed)
+
             self._schedule_hide()
             self.refresh_loot_count_async()
 
         client_api.do_request_async(Actions.LOOT_OPEN, self.current_lootbox, on_opened)
+
 
     def hide_loot_box(self):
         if self.hide_after_id is not None:

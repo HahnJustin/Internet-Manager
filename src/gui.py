@@ -781,6 +781,7 @@ loot_ctrl = LootController(
     loot_button=loot_button,
     loot_limit=loot_limit,
     local_loot_boxes=local_loot_boxes,
+    on_vouchers_changed=update_voucher_label,
 )
 loot_button.configure(command=loot_ctrl.pull_box_from_storage)
 
