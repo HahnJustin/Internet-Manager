@@ -18,6 +18,7 @@ VOUCHER_ODDS = 65
 
 DEFAULT_VOUCHER_LIMIT = 5
 DEFAULT_LOOT_BOX_LIMIT = 5
+DEFAULT_RETROVOUCHER_LIMIT = 5
 
 TIME_FMT = "%m/%d/%y %H:%M:%S"
 
@@ -39,7 +40,8 @@ default_cfg = {
     ConfigKey.MILITARY_TIME.value: False,
     ConfigKey.SOUND_ON.value: True,
     ConfigKey.WARNING_MINUTES.value: 15,
-    ConfigKey.KEY.value: key.decode('utf-8')
+    ConfigKey.KEY.value: key.decode('utf-8'),
+    ConfigKey.USE_RETROVOUCHER.value: False
 }
 
 def now_datetime_to_str() -> str:
@@ -48,9 +50,13 @@ def now_datetime_to_str() -> str:
 default_storage = {
     StorageKey.VOUCHER: 3,
     StorageKey.SINCE_LAST_RELAPSE: now_datetime_to_str(),
-    StorageKey.VOUCHER_LIMIT: 5,
+    StorageKey.VOUCHER_LIMIT: DEFAULT_VOUCHER_LIMIT,
     StorageKey.VOUCHERS_USED: [],
-    StorageKey.MANUAL_USED: False
+    StorageKey.MANUAL_USED: False,
+    StorageKey.RETROVOUCHER: 0,
+    StorageKey.RETROVOUCHER_LIMIT: DEFAULT_RETROVOUCHER_LIMIT,
+    StorageKey.RETROVOUCHER_USED: False,
+    StorageKey.RETROVOUCHER_SCHEDULED: False,
 }
 
 default_time = {
@@ -91,7 +97,7 @@ def get_storage() -> dict:
     with _storage_lock:
         if not json_data:
             json_data, _ = _load_or_recover(get_json_path(), default_storage)
-            # ensure a valid current file exists
+            ensure_retrovoucher_fields()
             save_storage()
         return json_data
 
@@ -383,6 +389,151 @@ def _load_or_recover(path: str, default: dict) -> tuple[dict, bytes | None]:
 
     return default, None
 
+def retrovoucher_enabled() -> bool:
+    # cfg keys are strings in the json file
+    return bool(get_config().get(ConfigKey.USE_RETROVOUCHER.value, False))
+
+def ensure_retrovoucher_fields():
+    """
+    Ensure storage has retro fields if feature is enabled.
+    Safe to call repeatedly.
+    """
+    if not retrovoucher_enabled():
+        return
+
+    with _storage_lock:
+        changed = False
+
+        if StorageKey.RETROVOUCHER not in json_data:
+            json_data[StorageKey.RETROVOUCHER] = 0
+            changed = True
+
+        if StorageKey.RETROVOUCHER_LIMIT not in json_data:
+            json_data[StorageKey.RETROVOUCHER_LIMIT] = DEFAULT_RETROVOUCHER_LIMIT
+            changed = True
+
+        if StorageKey.RETROVOUCHER_USED not in json_data:
+            json_data[StorageKey.RETROVOUCHER_USED] = False
+            changed = True
+
+        if StorageKey.RETROVOUCHER_SCHEDULED not in json_data:
+            json_data[StorageKey.RETROVOUCHER_SCHEDULED] = False
+            changed = True
+
+        if changed:
+            save_storage()
+
+def get_retrovoucher_limit() -> int:
+    if not retrovoucher_enabled():
+        return 0
+    with _storage_lock:
+        if StorageKey.RETROVOUCHER_LIMIT in json_data:
+            return int(json_data[StorageKey.RETROVOUCHER_LIMIT])
+        json_data[StorageKey.RETROVOUCHER_LIMIT] = DEFAULT_RETROVOUCHER_LIMIT
+        save_storage()
+        return DEFAULT_RETROVOUCHER_LIMIT
+
+def get_retrovoucher_count() -> int:
+    if not retrovoucher_enabled():
+        return 0
+    with _storage_lock:
+        return int(json_data.get(StorageKey.RETROVOUCHER, 0))
+
+def get_retrovoucher_scheduled() -> bool:
+    if not retrovoucher_enabled():
+        return False
+    with _storage_lock:
+        return bool(json_data.get(StorageKey.RETROVOUCHER_SCHEDULED, False))
+
+def get_retrovoucher_used() -> bool:
+    if not retrovoucher_enabled():
+        return False
+    with _storage_lock:
+        return bool(json_data.get(StorageKey.RETROVOUCHER_USED, False))
+
+def add_retrovoucher(amount: int = 1):
+    """
+    Add retrovouchers, clamped to limit.
+    (You can call this from loot later.)
+    """
+    if not retrovoucher_enabled() or amount <= 0:
+        return
+
+    with _storage_lock:
+        limit = get_retrovoucher_limit()
+        cur = int(json_data.get(StorageKey.RETROVOUCHER, 0))
+        json_data[StorageKey.RETROVOUCHER] = clamp(cur + amount, 0, limit)
+        save_storage()
+
+def set_retrovoucher_scheduled(scheduled: bool):
+    """
+    Only allowed if NOT used yet (matches your "can unschedule until first shutdown" rule).
+    """
+    if not retrovoucher_enabled():
+        return
+
+    with _storage_lock:
+        if bool(json_data.get(StorageKey.RETROVOUCHER_USED, False)):
+            return  # locked in, can't toggle
+        json_data[StorageKey.RETROVOUCHER_SCHEDULED] = bool(scheduled)
+        save_storage()
+
+def toggle_retrovoucher_scheduled() -> bool:
+    """
+    Toggle scheduled on/off. Returns the new scheduled state.
+    """
+    if not retrovoucher_enabled():
+        return False
+
+    with _storage_lock:
+        if bool(json_data.get(StorageKey.RETROVOUCHER_USED, False)):
+            return bool(json_data.get(StorageKey.RETROVOUCHER_SCHEDULED, False))
+
+        cur = bool(json_data.get(StorageKey.RETROVOUCHER_SCHEDULED, False))
+        new_val = not cur
+        json_data[StorageKey.RETROVOUCHER_SCHEDULED] = new_val
+        save_storage()
+        return new_val
+
+def consume_retrovoucher_if_scheduled() -> bool:
+    """
+    Call this at the moment the *first shutdown/enforced shutdown would happen*.
+    If scheduled and available, consume 1 and lock it in (USED=True).
+    Returns True if retro was consumed.
+    """
+    if not retrovoucher_enabled():
+        return False
+
+    with _storage_lock:
+        if not bool(json_data.get(StorageKey.RETROVOUCHER_SCHEDULED, False)):
+            return False
+        if bool(json_data.get(StorageKey.RETROVOUCHER_USED, False)):
+            return True  # already locked for the window
+
+        cur = int(json_data.get(StorageKey.RETROVOUCHER, 0))
+        if cur <= 0:
+            return False
+
+        json_data[StorageKey.RETROVOUCHER] = cur - 1
+        json_data[StorageKey.RETROVOUCHER_USED] = True
+        # keep scheduled True while used (your described “now you can’t take it back”)
+        json_data[StorageKey.RETROVOUCHER_SCHEDULED] = True
+        save_storage()
+        return True
+
+def reset_retrovoucher_window():
+    """
+    Call this when the cutoff rolls over into a new day window.
+    Normal vouchers become usable again; retro resets.
+    """
+    if not retrovoucher_enabled():
+        return
+
+    with _storage_lock:
+        json_data[StorageKey.RETROVOUCHER_USED] = False
+        json_data[StorageKey.RETROVOUCHER_SCHEDULED] = False
+        save_storage()
+
 _storage_lock = threading.RLock()
 _time_lock = threading.RLock()
 
@@ -394,6 +545,7 @@ def init(path):
 
     with _storage_lock:
         json_data, _ = _load_or_recover(get_json_path(), default_storage)
+        ensure_retrovoucher_fields()
         save_storage()
 
     with _time_lock:

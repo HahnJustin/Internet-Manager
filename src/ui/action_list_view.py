@@ -54,6 +54,7 @@ class ActionListView(ctk.CTkFrame):
         self.on_click = on_click
 
         self._vouchers = None
+        self._cutoff_time: Optional[datetime] = None   # <-- add
 
         self.buttons: list[ctk.CTkButton] = []
         self._last_now = datetime.now()
@@ -69,10 +70,10 @@ class ActionListView(ctk.CTkFrame):
         self.refresh(now=self._last_now, vouchers=None)
 
     # -------- public API (used by gui.py) --------
-
-    def refresh(self, now: datetime, vouchers=None):
+    def refresh(self, now: datetime, vouchers=None,  cutoff_time: Optional[datetime] = None):
         self._last_now = now
-        self._vouchers = vouchers  # <-- add this
+        self._vouchers = vouchers
+        self._cutoff_time = cutoff_time      
         self.actions.sort(key=lambda a: a.when)
 
         if len(self.buttons) != len(self.actions):
@@ -82,8 +83,7 @@ class ActionListView(ctk.CTkFrame):
             self._render(btn, action, i)
 
     def recolor(self):
-        # leave hover intact; we guard fg_color updates while hovered
-        self.refresh(self._last_now, vouchers=self._vouchers)
+        self.refresh(self._last_now, vouchers=self._vouchers, cutoff_time=self._cutoff_time)
 
     def get_colors(self, action: TimeAction, now: datetime):
         fg = self._fg(action, now)
@@ -146,6 +146,9 @@ class ActionListView(ctk.CTkFrame):
             self._hovered_btn = None
 
     def _handle_click(self, index: int):
+        if self._retro_active():
+            return
+
         # Disallow clicks past voucher capacity (sorted index rule)
         if self._vouchers is not None:
             total = int(getattr(self._vouchers, "local", 0)) + int(getattr(self._vouchers, "used_count", 0))
@@ -166,9 +169,19 @@ class ActionListView(ctk.CTkFrame):
         return ":".join(str(delta).split(":")[:2])  # HH:MM
 
     def _fg(self, action: TimeAction, now: datetime) -> str:
+        # If retro is active and this is a pre-cutoff shutdown/enforced-shutdown,
+        # DO NOT show voucher color even if action.vouched.
+        if (
+            action.kind != TimeActionKind.INTERNET_UP
+            and self._retro_active()
+            and self._is_pre_cutoff(action)
+        ):
+            return self._gradient_color(action, now)
+
         # Old behavior: vouched shutdown turns voucher color
         if action.kind == TimeActionKind.SHUTDOWN and action.vouched:
             return self.voucher_color
+
         return self._gradient_color(action, now)
 
     def _text_color(self, action: TimeAction) -> str:
@@ -217,11 +230,31 @@ class ActionListView(ctk.CTkFrame):
         """
         Icon rules:
         - If SHUTDOWN is vouched => show VOUCHER icon
+        - Else if SHUTDOWN is pre-cutoff AND retrovoucher scheduled/used => show RETROVOUCHER icon
         - Otherwise show icon for action.kind
         """
-        if action.kind == TimeActionKind.SHUTDOWN and getattr(action, "vouched", False):
-            return get_time_action_icon(TimeActionKind.VOUCHER)
+        if action.kind != TimeActionKind.INTERNET_UP and self._retro_active() and self._is_pre_cutoff(action):
+            return get_time_action_icon(TimeActionKind.RETROVOUCHER)
+
+        if action.kind == TimeActionKind.SHUTDOWN:
+            if getattr(action, "vouched", False):
+                return get_time_action_icon(TimeActionKind.VOUCHER)
         return get_time_action_icon(action.kind)
+
+    def _retro_active(self) -> bool:
+        v = self._vouchers
+        if v is None:
+            return False
+        return bool(getattr(v, "retro_scheduled", False) or getattr(v, "retro_used", False))
+
+    def _is_pre_cutoff(self, action: TimeAction) -> bool:
+        """
+        "Before cutoff time" means the action's CLOCK TIME is earlier than the cutoff CLOCK TIME.
+        (So 23:00 is NOT 'before 07:00'. 02:00 IS.)
+        """
+        if self._cutoff_time is None:
+            return False
+        return action.when < self._cutoff_time
 
     def _render(self, btn: ctk.CTkButton, action: TimeAction, index: int):
         now = self._last_now
@@ -243,7 +276,13 @@ class ActionListView(ctk.CTkFrame):
         # If hover disabled, make hover_color identical to fg (no visual change)
         hover_color = hv if hover_enabled else fg
 
-        sig = (action.kind, action.when, bool(getattr(action, "vouched", False)))
+        sig = (
+            action.kind,
+            action.when,
+            bool(getattr(action, "vouched", False)),
+            bool(self._retro_active()),
+            bool(self._is_pre_cutoff(action)),
+        )
 
         tc = self._text_color(action)
 

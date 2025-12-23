@@ -10,5 +10,6 @@
   "military_time": false,
   "sound_on": true,
   "warning_minutes": 15,
-  "debug_start_offline": false
+  "debug_start_offline": false,
+  "use_retrovoucher": true
 }

@@ -28,6 +28,11 @@ SAVE_THREAD_TIME = 3
 ASSET_FOLDER = "assets"
 SHOULD_EXIT = False
 
+RETRO_USED_KEY = StorageKey.RETROVOUCHER_USED
+RETRO_SCHED_KEY = StorageKey.RETROVOUCHER_SCHEDULED
+RETRO_COUNT_KEY = StorageKey.RETROVOUCHER
+RETRO_LIMIT_KEY = StorageKey.RETROVOUCHER_LIMIT
+
 global now
 global time_datas
 global json_data
@@ -98,6 +103,30 @@ def update():
         cull_vouchers()
         configreader.set_manual_override(False)
 
+        # reset retro flags at cutoff too
+        json_data = configreader.get_storage()
+        reset_retrovoucher_flags(json_data)
+        configreader.force_storage(json_data)
+
+    # If retro is scheduled while internet is currently OFF -> consume instantly + turn internet on.
+    if bool(json_data.get(RETRO_SCHED_KEY, False)) and not bool(json_data.get(RETRO_USED_KEY, False)):
+        if not internet_on:
+            # also refund future normal vouchers (idempotent)
+            refund_and_clear_all_vouchers(json_data)
+
+            if consume_retrovoucher(json_data):
+                configreader.force_storage(json_data)
+
+                play_sfx("internet_on.wav")  # or a retro sfx if you add one
+                internet_management.turn_on_wifi()
+                internet_management.turn_on_ethernet()
+                internet_on = True
+                print("Retrovoucher consumed immediately (internet was off).")
+            else:
+                # no retro available -> just unschedule
+                json_data[RETRO_SCHED_KEY] = False
+                configreader.force_storage(json_data)
+
     used_manual_override = configreader.get_manual_used()
 
     data = time_datas[0]
@@ -116,14 +145,49 @@ def update():
         used_voucher_today = True
         print(f"{data} - [VOUCHED] {data.action}")
     elif data.action == Actions.INTERNET_OFF:
-        play_sfx("internet_off.wav")
-        internet_management.turn_off_wifi()
-        internet_management.turn_off_ethernet()
-        if internet_on and not used_voucher_today and not used_manual_override: 
-            configreader.try_add_shutdown_loot_box()
-            libserver.start_loot_box_timer(1)
-        internet_on = False
-        print(f"{data} - {data.action}")
+    # If retro is used or scheduled, ignore shutdowns.
+        if bool(json_data.get(RETRO_USED_KEY, False)):
+            print(f"{data} - [RETRO USED] Ignoring shutdown.")
+            # do nothing, just roll time forward
+        elif bool(json_data.get(RETRO_SCHED_KEY, False)):
+            # scheduled retro becomes USED at the moment shutdown would happen
+            refund_and_clear_all_vouchers(json_data)
+
+            if consume_retrovoucher(json_data):
+                configreader.force_storage(json_data)
+
+                # if internet is off, bring it back on when retro becomes used
+                if not internet_on:
+                    play_sfx("internet_on.wav")
+                    internet_management.turn_on_wifi()
+                    internet_management.turn_on_ethernet()
+                    internet_on = True
+
+                print(f"{data} - [RETRO CONSUMED] Ignoring shutdown.")
+            else:
+                # no retro available; unschedule and proceed with normal shutdown
+                json_data[RETRO_SCHED_KEY] = False
+                configreader.force_storage(json_data)
+
+                play_sfx("internet_off.wav")
+                internet_management.turn_off_wifi()
+                internet_management.turn_off_ethernet()
+                if internet_on and not used_voucher_today and not used_manual_override and (not retro_active(json_data)):
+                    configreader.try_add_shutdown_loot_box()
+                    libserver.start_loot_box_timer(1)
+                internet_on = False
+                print(f"{data} - {data.action}")
+        else:
+            # normal shutdown behavior
+            play_sfx("internet_off.wav")
+            internet_management.turn_off_wifi()
+            internet_management.turn_off_ethernet()
+            if internet_on and not used_voucher_today and not used_manual_override and (not retro_active(json_data)):
+                configreader.try_add_shutdown_loot_box()
+                libserver.start_loot_box_timer(1)
+            internet_on = False
+            print(f"{data} - {data.action}")
+
     elif data.action == Actions.INTERNET_ON:
         play_sfx("internet_on.wav")
         internet_management.turn_on_wifi()
@@ -230,11 +294,84 @@ def play_sfx(sfx : str):
         except:
             playsound(resource_path(Paths.SFX_FOLDER + '\\' + sfx))
 
+def retro_active(storage: dict) -> bool:
+    return bool(storage.get(RETRO_USED_KEY, False) or storage.get(RETRO_SCHED_KEY, False))
 
-if not pyuac.isUserAdmin():
+def reset_retrovoucher_flags(storage: dict) -> None:
+    storage[RETRO_USED_KEY] = False
+    storage[RETRO_SCHED_KEY] = False
+
+def refund_and_clear_all_vouchers(storage: dict) -> int:
+    """
+    Clears ALL entries in VOUCHERS_USED and refunds that many vouchers (clamped).
+    This is the 'unuse everything' behavior you want when retro activates.
+    """
+    used_list = storage.get(StorageKey.VOUCHERS_USED, [])
+    if not isinstance(used_list, list) or not used_list:
+        storage[StorageKey.VOUCHERS_USED] = []
+        return 0
+
+    refunded = len(used_list)
+    storage[StorageKey.VOUCHERS_USED] = []
+
+    limit = int(storage.get(StorageKey.VOUCHER_LIMIT, 999999))
+    storage[StorageKey.VOUCHER] = min(
+        limit,
+        int(storage.get(StorageKey.VOUCHER, 0)) + refunded
+    )
+    return refunded
+
+def refund_future_vouchers(storage: dict, now: datetime) -> int:
+    """
+    Remove future timestamps from vouchers_used and refund that many vouchers.
+    Returns refunded count.
+    """
+    used_list = storage.get(StorageKey.VOUCHERS_USED, [])
+    if not isinstance(used_list, list):
+        return 0
+
+    refunded = 0
+    for i in reversed(range(len(used_list))):
+        s = used_list[i]
+        try:
+            dt = configreader.str_to_datetime(s)
+        except Exception:
+            # keep your migration behavior consistent:
+            used_list.pop(i)
+            refunded += 1
+            continue
+
+        if dt > now:
+            used_list.pop(i)
+            refunded += 1
+
+    if refunded:
+        limit = int(storage.get(StorageKey.VOUCHER_LIMIT, 999999))
+        storage[StorageKey.VOUCHER] = min(limit, int(storage.get(StorageKey.VOUCHER, 0)) + refunded)
+        storage[StorageKey.VOUCHERS_USED] = used_list
+
+    return refunded
+
+def consume_retrovoucher(storage: dict) -> bool:
+    """
+    Spend 1 retrovoucher: decrement count, mark used=True, scheduled=False.
+    Returns True if consumed, False if none available.
+    """
+    count = int(storage.get(RETRO_COUNT_KEY, 0))
+    if count <= 0:
+        # nothing to consume
+        storage[RETRO_SCHED_KEY] = False
+        return False
+
+    storage[RETRO_COUNT_KEY] = count - 1
+    storage[RETRO_USED_KEY] = True
+    storage[RETRO_SCHED_KEY] = False
+    return True
+
+""" if not pyuac.isUserAdmin():
    print("Re-launching as admin!")
    pyuac.runAsAdmin()
-   sys.exit()
+   sys.exit() """
 
 # Getting Application Path - Thanks Max Tet
 if getattr(sys, 'frozen', False):
@@ -335,11 +472,20 @@ print(f" Cut-off time: {cutoff_time}")
 last_active_time = configreader.get_active_time()
 print(f" Last Active Time: {last_active_time}")
 
+json_data = configreader.get_storage()
+retro_is_active = retro_active(json_data)
+
+last_cutoff = cutoff_time - timedelta(days=1)
+if last_active_time <= last_cutoff:
+    json_data = configreader.get_storage()
+    reset_retrovoucher_flags(json_data)
+    configreader.force_storage(json_data)
+
 first_shutdown_yesterday = min(shutdown_times)
 print(f" First Shutdown Yesterday: {first_shutdown_yesterday}")
 
 pre_box_amount = configreader.get_all_loot_boxes()
-if last_active_time <= cutoff_time - timedelta(days=1) and last_active_time <= first_shutdown_yesterday and internet_on:
+if (not retro_is_active) and last_active_time <= cutoff_time - timedelta(days=1) and last_active_time <= first_shutdown_yesterday and internet_on:
     difference = cutoff_time - last_active_time
     loot_boxes = difference.days
 

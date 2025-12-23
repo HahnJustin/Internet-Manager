@@ -77,7 +77,7 @@ def get_time_action_icon(kind: TimeActionKind) -> CTkImage:
     elif kind == TimeActionKind.VOUCHER:
         path = Paths.ASSETS_FOLDER + "/mini_voucher.png"
     elif kind == TimeActionKind.RETROVOUCHER:
-        path = Paths.ASSETS_FOLDER + "/mini_voucher.png"
+        path = Paths.ASSETS_FOLDER + "/mini_retrovoucher.png"
     else:
         path = Paths.ASSETS_FOLDER + "/skull_globe.png"
     return get_image(path)

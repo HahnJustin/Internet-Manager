@@ -6,13 +6,39 @@ import struct
 import threading
 import internet_management
 import configreader
-from libuniversal import Actions, MessageKey
+from libuniversal import Actions, MessageKey, StorageKey
+from datetime import datetime
 
 loot_box_gained = 0
 loot_box_timer = None
 _loot_lock = threading.Lock()
 
 SHOULD_EXIT = False
+
+RETRO_USED_KEY = StorageKey.RETROVOUCHER_USED
+RETRO_SCHED_KEY = StorageKey.RETROVOUCHER_SCHEDULED
+RETRO_COUNT_KEY = StorageKey.RETROVOUCHER
+RETRO_LIMIT_KEY = StorageKey.RETROVOUCHER_LIMIT
+
+def refund_and_clear_all_vouchers(storage: dict) -> int:
+    """
+    Clears ALL entries in VOUCHERS_USED and refunds that many vouchers (clamped).
+    This is the 'unuse everything' behavior you want when retro activates.
+    """
+    used_list = storage.get(StorageKey.VOUCHERS_USED, [])
+    if not isinstance(used_list, list) or not used_list:
+        storage[StorageKey.VOUCHERS_USED] = []
+        return 0
+
+    refunded = len(used_list)
+    storage[StorageKey.VOUCHERS_USED] = []
+
+    limit = int(storage.get(StorageKey.VOUCHER_LIMIT, 999999))
+    storage[StorageKey.VOUCHER] = min(
+        limit,
+        int(storage.get(StorageKey.VOUCHER, 0)) + refunded
+    )
+    return refunded
 
 class Message:
     def __init__(self, selector, sock, addr):
@@ -163,6 +189,23 @@ class Message:
         elif action == Actions.GET_LOOT:
             key = configreader.get_a_loot_box()
             content = {MessageKey.RESULT: key}
+        elif action == Actions.USED_RETROVOUCHER:
+            storage = configreader.get_storage()
+
+            if not bool(storage.get(RETRO_USED_KEY, False)):
+                storage[RETRO_SCHED_KEY] = True
+                refund_and_clear_all_vouchers(storage)
+                configreader.force_storage(storage)
+
+            # always respond in the normal shape
+            content = {MessageKey.RESULT: storage}
+
+        elif action == Actions.UNUSED_RETROVOUCHER:
+            storage = configreader.get_storage()
+            storage[RETRO_SCHED_KEY] = False
+            configreader.force_storage(storage)
+
+            content = {MessageKey.RESULT: storage}
         else:
             content = {MessageKey.RESULT: f"Error: invalid action '{action}'."}
         content_encoding = "utf-8"

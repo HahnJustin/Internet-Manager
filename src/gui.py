@@ -87,6 +87,19 @@ _icon_img_ref = None
 
 loot_ctrl = None
 
+# -------- Bottom UI: retrovoucher --------
+use_retrovoucher = False
+retrovoucher_btn = None
+
+retrovoucher_used = False
+retrovoucher_scheduled = False
+
+RETRO_BG = "#3a2b2b"          # normal (subtle warm)
+RETRO_BG_SCHEDULED = "#6b2323" # scheduled (redder)
+RETRO_BG_USED = "#2b2f39"      # used/disabled (muted)
+RETRO_HOVER = "#7a2b2b"        # hover when scheduled
+RETRO_LIMIT_COLOR = "#e04646" 
+
 global json_data
 global date_label
 global time_label
@@ -145,7 +158,7 @@ def update_gui():
         delta = next_action.when - now
         time_until_label.configure(text=":".join(str(delta).split(":")[:2]))
 
-    action_list.refresh(now=state.now, vouchers=state.vouchers)
+    action_list.refresh(now=state.now, vouchers=state.vouchers, cutoff_time=state.cutoff_time)
     update_help_colors_from_action(action_list.first_button_action())
 
 def get_datetime():
@@ -184,12 +197,16 @@ def create_gradient(colors):
 
 def update_streak_graphics():
     delta = state.now - state.last_relapse
+
+    # Clear both, then re-pack in desired arrangement
+    streak_icon.pack_forget()
+    streak_label.pack_forget()
+
     if delta.total_seconds() / 86400 <= 1:
-        streak_icon.pack_forget()
-        streak_label.pack(side='top', anchor='center', expand=False)
+        streak_label.pack(side='left', anchor='center')
     else:
-        streak_icon.pack(side='left', anchor='e', expand=True)
-        streak_label.pack(side='right', anchor='w', expand=True)
+        streak_icon.pack(side='left', anchor='center')
+        streak_label.pack(side='left', anchor='center', padx=(8, 0))
 
     streak_icon.configure(image=get_streak_icon(state.streak))
     streak_label.configure(text=f"Streak: {state.streak}")
@@ -201,6 +218,90 @@ def update_voucher_label():
         voucher_label.configure(text_color=FULL_COLOR)
     else:
         voucher_label.configure(text_color="#ffffff")
+
+def update_retrovoucher_label():
+    global retrovoucher_btn
+    if not use_retrovoucher or retrovoucher_btn is None:
+        return
+
+    v = state.vouchers
+    count = int(getattr(v, "retrolocal", 0))
+    retrovoucher_btn.configure(text=f"x{count}")
+
+    at_limit = (count >= v.retrolimit)
+    txt = RETRO_LIMIT_COLOR if at_limit else "#ffffff"
+
+    if v.retro_used:
+        retrovoucher_btn.configure(
+            state="disabled",
+            text_color=txt,                 # harmless, but…
+            text_color_disabled=txt,        # <-- THIS is what disabled uses
+            fg_color=RETRO_BG_USED,
+            hover_color=RETRO_BG_USED,
+        )
+        return
+
+    # normal scheduled/unscheduled colors
+    if v.retro_scheduled:
+        retrovoucher_btn.configure(
+            state="normal",
+            text_color=txt,
+            fg_color=RETRO_BG_SCHEDULED,
+            hover_color=RETRO_HOVER,
+        )
+    else:
+        retrovoucher_btn.configure(
+            state="normal",
+            text_color=txt,
+            fg_color=RETRO_BG,
+            hover_color=app_bg_color,
+        )
+
+def on_retrovoucher_clicked():
+    """
+    Toggle schedule/unschedule (only if not used).
+    """
+    global json_data
+
+    if state.vouchers.retro_used:
+        return
+
+    target_schedule = not state.vouchers.retro_scheduled
+    action = Actions.USED_RETROVOUCHER if target_schedule else Actions.UNUSED_RETROVOUCHER
+
+    # prevent double-click races
+    if retrovoucher_btn is not None:
+        retrovoucher_btn.configure(state="disabled")
+
+    def on_done(result):
+        global json_data
+
+        # re-enable unless server says used (then update_retrovoucher_label disables it)
+        try:
+            if retrovoucher_btn is not None:
+                retrovoucher_btn.configure(state="normal")
+        except Exception:
+            pass
+
+        if isinstance(result, Exception):
+            show_status("Retrovoucher: server error", False)
+            update_retrovoucher_label()
+            return
+        else:
+            state.vouchers.retro_scheduled = target_schedule
+            sync_storage_and_reset_action_list()
+        update_retrovoucher_label()
+
+        # Optional immediate UI refresh:
+        try:
+            state.now = datetime.now()
+            action_list.refresh(now=state.now, vouchers=state.vouchers, cutoff_time=state.cutoff_time)
+            update_help_colors_from_action(action_list.first_button_action())
+            _refresh_time_until_label()
+        except Exception:
+            pass
+
+    client_api.do_request_async(action, "", on_done)
 
 def set_icon(internet_on : bool):
     global _icon_img_ref
@@ -362,7 +463,7 @@ def on_action_clicked(index: int):
 
     # IMPORTANT: immediate UI refresh (no 1-second wait)
     state.now = datetime.now()
-    action_list.refresh(now=state.now, vouchers=state.vouchers)
+    action_list.refresh(now=state.now, vouchers=state.vouchers, cutoff_time=state.cutoff_time)
     update_help_colors_from_action(action_list.first_button_action())
     _refresh_time_until_label()
 
@@ -377,6 +478,64 @@ def was_relapse_since_last_cutoff(now: datetime, cutoff_time: datetime, storage:
     last_cutoff = cutoff_time if cutoff_time <= now else (cutoff_time - timedelta(days=1))
 
     return relapse_dt >= last_cutoff
+
+def sync_storage_and_reset_action_list():
+    def _on_storage(storage):
+        if isinstance(storage, Exception) or storage is None:
+            show_status("Server sync failed", False)
+            return
+
+        # 1) hydrate voucher state from server
+        hydrate_voucher_state_from_storage(storage, state)
+        update_voucher_label()
+        update_retrovoucher_label()
+
+        # 2) reset vouched flags on actions, then re-apply from storage
+        for a in time_controller.actions:
+            if hasattr(a, "vouched"):
+                a.vouched = False
+        apply_vouched_from_storage(time_controller.actions, storage)
+
+        # 3) HARD reset buttons so visuals don't stick
+        action_list.actions = time_controller.actions
+        action_list._rebuild_buttons()  # yes it's "internal", but it's exactly what you want here
+
+        # 4) re-render now
+        state.now = datetime.now()
+        action_list.refresh(now=state.now, vouchers=state.vouchers, cutoff_time=state.cutoff_time)
+        update_help_colors_from_action(action_list.first_button_action())
+        _refresh_time_until_label()
+
+    client_api.do_request_async(Actions.GRAB_STORAGE, "", _on_storage)
+
+def hydrate_voucher_state_from_storage(storage: dict, state: AppState) -> None:
+    """
+    Update BOTH normal voucher fields and retrovoucher fields on state.vouchers
+    from the latest storage payload.
+    Safe if retro keys missing.
+    """
+    v = state.vouchers
+
+    # ---- normal vouchers ----
+    v.local = int(storage.get(StorageKey.VOUCHER, v.local))
+    v.limit = int(storage.get(StorageKey.VOUCHER_LIMIT, v.limit))
+
+    used_list = storage.get(StorageKey.VOUCHERS_USED, [])
+    if isinstance(used_list, list):
+        v.used_count = len(used_list)
+
+        # if you want used_today strictly based on "since last cutoff", you already compute it elsewhere
+        # but here's a conservative fallback:
+        # v.used_today = bool(used_list)
+
+    # ---- retrovoucher ----
+    # These are the only retro fields you need for UI:
+    v.retro_used = bool(storage.get(StorageKey.RETROVOUCHER_USED, False))
+    v.retro_scheduled = bool(storage.get(StorageKey.RETROVOUCHER_SCHEDULED, False))
+
+    # if you have keys for these, use them:
+    v.retrolocal = int(storage.get(StorageKey.RETROVOUCHER, 0))
+    v.retrolimit = int(storage.get(StorageKey.RETROVOUCHER_LIMIT, 1))
 
 def debug_force_offline_ui():
     """
@@ -404,7 +563,7 @@ def debug_force_offline_ui():
     # Force a redraw tick so action colors/time-until are consistent
     try:
         state.now = datetime.now()
-        action_list.refresh(now=state.now, vouchers=state.vouchers)
+        action_list.refresh(now=state.now, vouchers=state.vouchers, cutoff_time=state.cutoff_time)
         update_help_colors_from_action(action_list.first_button_action())
         _refresh_time_until_label()
     except Exception:
@@ -464,7 +623,6 @@ with f:
 client_api.init(host, port)
 
 cfg = client_api.do_request(Actions.GRAB_CONFIG, "")
-
 json_data = client_api.do_request(Actions.GRAB_STORAGE, "")
 
 if cfg is None or json_data is None:
@@ -473,6 +631,14 @@ if cfg is None or json_data is None:
 # Defining local vouchers amount
 local_vouchers = json_data[StorageKey.VOUCHER]
 voucher_limit = json_data[StorageKey.VOUCHER_LIMIT]
+
+# Retrovouchers
+use_retrovoucher = bool(cfg.get(ConfigKey.USE_RETROVOUCHER, False))
+if use_retrovoucher:
+    retro_used = bool(json_data.get(StorageKey.RETROVOUCHER_USED, False))
+    retro_scheduled = bool(json_data.get(StorageKey.RETROVOUCHER_SCHEDULED, False))
+    retrovoucher_limit = int(json_data.get(StorageKey.RETROVOUCHER_LIMIT, 1))  # if exists, else 1
+    local_retrovouchers = 0 if retro_used else 1                               # or from storage key if you have one
 
 # Defining local loot boxes
 local_loot_boxes = 0
@@ -545,15 +711,12 @@ state = AppState(
     globe_on=True,
     streak=streak,
     last_relapse=last_relapse,
-    vouchers=VoucherState(
-        local=local_vouchers,
-        used_today=used_voucher_today,
-        used_count=local_vouchers_used,
-        limit=voucher_limit
-    ),
+    vouchers = VoucherState(),
     loot=LootUIState(),
     used_manual_override=used_manual_override
 )
+
+hydrate_voucher_state_from_storage(json_data, state)
 
 # Shutdown label parent
 widget_frame = customtkinter.CTkFrame(app, fg_color=widget_bg_color, corner_radius=0)
@@ -584,9 +747,13 @@ bottom_frame.pack(side='bottom', fill="x")
 bottom_right_frame = customtkinter.CTkFrame(bottom_frame, corner_radius=0, fg_color=SECONDARY_COLOR)
 bottom_right_frame.pack(side='right')
 
-# Bottom left 
+# Bottom Left
 bottom_left_frame = customtkinter.CTkFrame(bottom_frame, corner_radius=0, fg_color=SECONDARY_COLOR)
 bottom_left_frame.pack(side='left')
+
+# ABSOLUTE CENTER: streak island overlays and is centered in bottom_frame itself
+streak_centerer = customtkinter.CTkFrame(bottom_frame, corner_radius=0, fg_color=SECONDARY_COLOR)
+streak_centerer.place(relx=0.5, rely=0.5, anchor="center")
 
 # Making shutdown label color gradient
 shutdown_colors = create_gradient(SHUTDOWN_COLORS)
@@ -752,17 +919,51 @@ else:
     caution_left = customtkinter.CTkLabel(top_right_frame, text="", image=get_image(Paths.ASSETS_FOLDER + "/caution.png"))
     caution_left.pack(side='left', anchor='w', expand=True)
 
-streak_icon = customtkinter.CTkLabel(bottom_frame, text="")
-streak_icon.pack(side='left', anchor='e', expand=True)
-streak_label = customtkinter.CTkLabel(bottom_frame, text=f"Streak: {state.streak}", text_color="white" )
-streak_label.pack(side='right', anchor='w', expand=True)
+streak_icon = customtkinter.CTkLabel(streak_centerer, text="")
+streak_icon.pack(side='left', anchor='center')
+
+streak_label = customtkinter.CTkLabel(streak_centerer, text=f"Streak: {state.streak}", text_color="white")
+streak_label.pack(side='left', anchor='center', padx=(8, 0))
+
+streak_centerer.lift()
 update_streak_graphics()
 
-voucher_label = customtkinter.CTkLabel(bottom_right_frame, text=f"x{local_vouchers}", 
-                                        image=get_image(Paths.ASSETS_FOLDER + "/tiny_voucher.png"),
-                                        compound='left', anchor='e', padx = 5, text_color="white")
-voucher_label.pack(side='right', anchor='e', expand=True)
+# Container so we can pad/align voucher + retrovoucher consistently
+voucher_cluster = customtkinter.CTkFrame(bottom_right_frame, fg_color=SECONDARY_COLOR, corner_radius=0)
+voucher_cluster.pack(side='right', anchor='e', padx=(0, 6))  # slight inset from window edge
+
+voucher_label = customtkinter.CTkLabel(
+    voucher_cluster,
+    text=f"x{local_vouchers}",
+    image=get_image(Paths.ASSETS_FOLDER + "/tiny_voucher.png"),
+    compound='left',
+    anchor='e',
+    padx=5,
+    text_color="white"
+)
+voucher_label.pack(side='right', anchor='e', pady=(1, 0))  # tiny nudge down
 update_voucher_label()
+
+if use_retrovoucher:
+    retro_img = get_image(Paths.ASSETS_FOLDER + "/tiny_retrovoucher.png")
+
+    retrovoucher_btn = customtkinter.CTkButton(
+        voucher_cluster,
+        text="x0",
+        image=retro_img,
+        compound='left',
+        anchor='e',
+        width=5,
+        height=22,
+        fg_color=RETRO_BG,
+        hover_color=app_bg_color,
+        corner_radius=0,
+        command=on_retrovoucher_clicked,
+        text_color="white",
+    )
+    retrovoucher_btn.pack(side='right', anchor='e', padx=(0, 6), pady=(2, 0))
+
+    update_retrovoucher_label()
 
 loot_button = customtkinter.CTkButton(bottom_left_frame, text=f"x{local_loot_boxes}", 
                                         image=get_image(Paths.ASSETS_FOLDER + "/tiny_box.png"),

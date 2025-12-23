@@ -19,6 +19,8 @@ class Actions(str, Enum):
     LOOT_OPEN = "loot_open"
     NEW_LOOT = "new_loot"
     GET_LOOT = "get_loot"
+    USED_RETROVOUCHER = "used_retrovoucher"
+    UNUSED_RETROVOUCHER = "unused_retrovoucher"
 
 class MessageKey(str, Enum):
     RESULT = "result"
@@ -41,6 +43,7 @@ class ConfigKey(str, Enum):
     KEY = "key"
     DEBUG = "debug"
     DISABLED = "disabled"
+    USE_RETROVOUCHER = "use_retrovoucher"
 
 class StorageKey(str, Enum):
     SINCE_LAST_RELAPSE = "last_relapse"
@@ -51,6 +54,10 @@ class StorageKey(str, Enum):
     LOOT_BOXES = "loot_boxes"
     SHUTDOWN_LOOT_BOXES = "shutdown_loot_boxes"
     LOOT_BOX_LIMIT = "loot_box_limit"
+    RETROVOUCHER = "retrovoucher"
+    RETROVOUCHER_USED = "retrovoucher_used"
+    RETROVOUCHER_SCHEDULED = "retrovoucher_scheduled"
+    RETROVOUCHER_LIMIT = "retrovoucher_limit"
 
 class TimeKey(str, Enum):
     LAST_TIME_ACTIVE = "last_active"

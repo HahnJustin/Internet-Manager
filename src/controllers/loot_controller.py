@@ -21,6 +21,8 @@ class LootController:
     loot_button: object
     loot_limit: int
     local_loot_boxes: int = 0
+    box_origin = None
+    loot_box_openable = True
 
     on_vouchers_changed: Optional[Callable[[], None]] = None 
 
