@@ -123,4 +123,5 @@ class LootOverlay:
             pass
 
         text_y = (h / 2) - (img_h / 2) - 10
-        self.loot_text.move(w / 2, text_y)
+        self.loot_text.coords(w / 2, text_y)
+

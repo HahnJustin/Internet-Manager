@@ -1,13 +1,21 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
+# from PyInstaller.utils.hooks import collect_submodules
+
+HERE = os.path.abspath(SPECPATH)   # folder containing this spec
+SRC  = HERE                        # if server.spec is inside src/
 
 a = Analysis(
     ['server.py'],
-    pathex=[],
+    pathex=[SRC],
     binaries=[],
     datas=[
-        ('assets/*', 'assets')
+        ('assets/*', 'assets'),
     ],
-    hiddenimports=[],
+    hiddenimports=[
+        # 'libserver',  # usually not needed if pathex is right, but harmless
+        # *collect_submodules('libserver'),
+    ],
     hookspath=[],
     runtime_hooks=[],
     excludes=[],
@@ -29,7 +37,7 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,
+    console=True,  # <-- turn on console for debugging server
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

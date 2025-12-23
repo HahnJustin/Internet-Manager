@@ -1,77 +1,113 @@
+# ui/gui_text.py
+from __future__ import annotations
 from dataclasses import dataclass
-import tkinter
+from typing import Iterable, Tuple, List
+
+@dataclass(frozen=True)
+class _OutlineLayer:
+    item_id: int
+    dx: int
+    dy: int
 
 @dataclass
 class OutlinedCanvasText:
-    canvas: tkinter.Canvas
-    main: int
-    outline: list[int]
-    offsets: list[tuple[int, int]]
+    canvas: object
+    main_id: int
+    outline_layers: List[_OutlineLayer]
+    base_tags: Tuple[str, ...]
 
     def set_text(self, text: str):
-        self.canvas.itemconfigure(self.main, text=text)
-        for oid in self.outline:
-            self.canvas.itemconfigure(oid, text=text)
+        self.canvas.itemconfigure(self.main_id, text=text)
+        for layer in self.outline_layers:
+            self.canvas.itemconfigure(layer.item_id, text=text)
 
     def set_state(self, state: str):
-        self.canvas.itemconfigure(self.main, state=state)
-        for oid in self.outline:
-            self.canvas.itemconfigure(oid, state=state)
+        self.canvas.itemconfigure(self.main_id, state=state)
+        for layer in self.outline_layers:
+            self.canvas.itemconfigure(layer.item_id, state=state)
 
-    def set_fill(self, fill: str):
-        self.canvas.itemconfigure(self.main, fill=fill)
+    def coords(self, x: float, y: float):
+        # main text
+        self.canvas.coords(self.main_id, x, y)
+        # outline text copies keep their offsets
+        for layer in self.outline_layers:
+            self.canvas.coords(layer.item_id, x + layer.dx, y + layer.dy)
 
-    def set_outline_fill(self, fill: str):
-        for oid in self.outline:
-            self.canvas.itemconfigure(oid, fill=fill)
+        # ensure main is above outline
+        try:
+            self.canvas.tag_raise(self.main_id)
+        except Exception:
+            pass
 
-    def move(self, x: float, y: float):
-        self.canvas.coords(self.main, x, y)
-        for oid, (dx, dy) in zip(self.outline, self.offsets):
-            self.canvas.coords(oid, x + dx, y + dy)
 
-    def raise_to_top(self):
-        for oid in self.outline:
-            self.canvas.tag_raise(oid)
-        self.canvas.tag_raise(self.main)
+def _outline_offsets(thickness: int) -> Iterable[tuple[int, int]]:
+    """
+    Generate pixel offsets for a thicker outline.
+    Filled square ring (looks good for small fonts).
+    """
+    t = max(1, int(thickness))
+    for dx in range(-t, t + 1):
+        for dy in range(-t, t + 1):
+            if dx == 0 and dy == 0:
+                continue
+            yield dx, dy
+
 
 def create_outlined_text(
-    canvas: tkinter.Canvas,
-    x: float, y: float,
+    canvas,
+    x: float,
+    y: float,
     *,
-    text: str = "",
-    font=None,
-    anchor: str = "center",
-    fill: str = "white",
-    outline: str = "black",
+    text: str,
+    font,
+    anchor="center",
+    fill="white",
+    outline="black",
     thickness: int = 2,
-    state: str = "normal",
-    tags=()
+    state="normal",
+    tags=(),
 ) -> OutlinedCanvasText:
-    # 8-direction stroke
-    offsets = [
-        (-thickness, -thickness), (0, -thickness), (thickness, -thickness),
-        (-thickness, 0),                          (thickness, 0),
-        (-thickness, thickness),  (0, thickness), (thickness, thickness),
-    ]
+    # Ensure tags is a tuple
+    if isinstance(tags, str):
+        tags = (tags,)
+    else:
+        tags = tuple(tags)
 
-    outline_ids = [
-        canvas.create_text(
+    outline_layers: List[_OutlineLayer] = []
+
+    # Create outline copies first (under the main text)
+    for dx, dy in _outline_offsets(thickness):
+        oid = canvas.create_text(
             x + dx, y + dy,
-            text=text, fill=outline, font=font,
-            anchor=anchor, state=state, tags=tags
+            text=text,
+            fill=outline,
+            font=font,
+            anchor=anchor,
+            state=state,
+            tags=tags
         )
-        for (dx, dy) in offsets
-    ]
+        outline_layers.append(_OutlineLayer(item_id=oid, dx=dx, dy=dy))
 
+    # Main text on top
     main_id = canvas.create_text(
         x, y,
-        text=text, fill=fill, font=font,
-        anchor=anchor, state=state, tags=tags
+        text=text,
+        fill=fill,
+        font=font,
+        anchor=anchor,
+        state=state,
+        tags=tags
     )
 
-    # Ensure the white text is above the outline
-    for oid in outline_ids:
-        canvas.tag_lower(oid, main_id)
+    # Make sure stacking order is correct immediately
+    try:
+        canvas.tag_raise(main_id)
+    except Exception:
+        pass
 
-    return OutlinedCanvasText(canvas, main_id, outline_ids, offsets)
+    return OutlinedCanvasText(
+        canvas=canvas,
+        main_id=main_id,
+        outline_layers=outline_layers,
+        base_tags=tags
+    )

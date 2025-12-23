@@ -113,16 +113,34 @@ class BottomOverlay:
         except Exception:
             pass
 
-        # relapse button bottom-right
+        # -----------------------------
+        # Center the relapse button
+        # -----------------------------
+        btn_center_x = w / 2.0
+        btn_right_x  = btn_center_x + (btn_w / 2.0)   # because bg uses anchor="se"
+
         if self.relapse_bg_item is not None:
-            self.canvas.coords(self.relapse_bg_item, x_right, y_bottom)
+            self.canvas.coords(self.relapse_bg_item, btn_right_x, y_bottom)
+
         if self.relapse_text_item is not None:
-            self.canvas.coords(self.relapse_text_item, x_right - (btn_w / 2), y_bottom - (btn_h / 2))
+            # Text anchored "center"
+            self.canvas.coords(self.relapse_text_item, btn_center_x, y_bottom - (btn_h / 2.0))
 
-        btn_visible = self.relapse_visible
-        icons_y = y_bottom - (btn_h + GAP) if btn_visible else y_bottom
+        # -----------------------------
+        # Align icons vertically with the button
+        # (same vertical level as the button center)
+        # -----------------------------
+        if self.relapse_visible:
+            btn_center_y = y_bottom - (btn_h / 2.0)
+            icons_bottom_y = btn_center_y + (icon_h / 2.0)  # because icons use anchor="se"
+        else:
+            # fallback: old behavior if button hidden
+            icons_bottom_y = y_bottom
 
+        # Keep icons right-aligned to the canvas edge,
+        # but vertically aligned with the relapse button row.
         if self.manual_icon_item is not None:
-            self.canvas.coords(self.manual_icon_item, x_right, icons_y)
+            self.canvas.coords(self.manual_icon_item, x_right, icons_bottom_y)
+
         if self.vouched_icon_item is not None:
-            self.canvas.coords(self.vouched_icon_item, x_right - icon_w - GAP, icons_y)
+            self.canvas.coords(self.vouched_icon_item, x_right - icon_w - GAP, icons_bottom_y)

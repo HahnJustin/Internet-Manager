@@ -245,13 +245,18 @@ class ActionListView(ctk.CTkFrame):
 
         sig = (action.kind, action.when, bool(getattr(action, "vouched", False)))
 
+        tc = self._text_color(action)
+
         desired = {
             "text": text,
             "image": icon,
             "hover_color": hover_color,
             "state": state,
             "hover": hover_enabled,
-            "text_color": self._text_color(action),
+
+            # IMPORTANT: disabled buttons use text_color_disabled, not text_color
+            "text_color": tc,
+            "text_color_disabled": tc,
         }
 
         desired_static = {

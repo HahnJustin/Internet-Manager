@@ -5,13 +5,18 @@ from PIL import ImageTk
 
 from assets import Paths
 from ui.images import get_canvas_photo
+from ui import gui_text
+
 
 @dataclass
 class StatusOverlay:
     canvas: Optional[object] = None
+
     item: Optional[int] = None
-    text_item: Optional[int] = None
     img_tk: Optional[ImageTk.PhotoImage] = None
+
+    # outlined text object returned by gui_text.create_outlined_text
+    text_obj: Optional[object] = None
 
     visible: bool = False
     current_text: str = ""
@@ -19,19 +24,29 @@ class StatusOverlay:
 
     def init(self, canvas):
         self.canvas = canvas
-        self.item = canvas.create_image(0, 0, anchor="n", state="hidden", tags=("status",))
-        self.text_item = canvas.create_text(
+
+        # Ribbon image
+        self.item = canvas.create_image(
+            0, 0, anchor="n", state="hidden", tags=("status",)
+        )
+
+        # Outlined text (white with black outline)
+        # Give it its own tag so we can move all layers in layout()
+        self.text_obj = gui_text.create_outlined_text(
+            canvas,
             0, 0,
             text="",
             fill="white",
-            font=("DreiFraktur", 12),
+            outline="black",
+            thickness=1,
+            font=("DreiFraktur", 11),
             anchor="n",
             state="hidden",
-            tags=("status",)
+            tags=("status", "status_text")
         )
 
     def show(self, text: str, positive: bool):
-        if self.canvas is None or self.item is None or self.text_item is None:
+        if self.canvas is None or self.item is None:
             return
 
         self.visible = True
@@ -42,19 +57,21 @@ class StatusOverlay:
         self.img_tk = get_canvas_photo(self.canvas, ribbon_path)
 
         self.canvas.itemconfigure(self.item, image=self.img_tk, state="normal")
-        self.canvas.itemconfigure(self.text_item, text=text, state="normal")
+
+        if self.text_obj is not None:
+            self.text_obj.set_text(text)
+
+        # show all status-tagged items (ribbon + outlined text layers)
+        self.canvas.itemconfigure("status", state="normal")
 
     def hide(self):
         self.visible = False
-        if self.canvas is None or self.item is None or self.text_item is None:
+        if self.canvas is None:
             return
-        self.canvas.itemconfigure(self.item, state="hidden")
-        self.canvas.itemconfigure(self.text_item, state="hidden")
+        self.canvas.itemconfigure("status", state="hidden")
 
     def layout(self, w: int, h: int):
-        if not self.visible:
-            return
-        if self.canvas is None or self.item is None or self.text_item is None:
+        if not self.visible or self.canvas is None or self.item is None:
             return
 
         top_pad = -4
@@ -67,4 +84,9 @@ class StatusOverlay:
         except Exception:
             pass
 
-        self.canvas.coords(self.text_item, w / 2, top_pad + rh * 0.42)
+        tx = w / 2
+        ty = top_pad + rh * 0.42 + 4  # slightly lower
+
+        if self.text_obj is not None:
+            self.text_obj.coords(tx, ty)
+

@@ -746,6 +746,86 @@ def on_action_clicked(index: int):
     update_help_colors_from_action(action_list.first_button_action())
     _refresh_time_until_label()
 
+def debug_force_offline_ui():
+    """
+    DEBUG: Make the UI *look* like we're offline, without touching the server.
+    Safe to call after widgets exist (status/bottom/globes).
+    """
+    global internet_on, globe_on
+
+    # Force local flag (only used by some UI conditionals)
+    internet_on = False
+
+    # Icon + status banner
+    set_icon(False)
+    show_status("Internet is Off (DEBUG)", False)
+
+    # Bottom relapse button should be visible when offline
+    bottom.toggle_relapse_button(True)
+
+    # Stop globe animation + switch it off visually
+    toggle_globe_animation(False)
+    globe_on = False
+
+    # Make sure labels refresh immediately
+    try:
+        state.internet_on = False
+    except Exception:
+        pass
+
+    # Force a redraw tick so action colors/time-until are consistent
+    try:
+        state.now = datetime.now()
+        action_list.refresh(now=state.now, vouchers=state.vouchers)
+        update_help_colors_from_action(action_list.first_button_action())
+        _refresh_time_until_label()
+    except Exception:
+        pass
+
+def debug_render_all_overlays():
+    """
+    DEBUG: Force-show all canvas overlays (bottom icons, relapse, status ribbon, loot box)
+    so you can visually confirm they render/position correctly.
+    UI-only: does NOT call server.
+    """
+    global box_origin, box_consumed, loot_box_openable, current_lootbox
+
+    # ---- Bottom overlay icons (force visible) ----
+    try:
+        bottom.toggle_manual_icon(True)
+        bottom.toggle_vouched_icon(True)
+        bottom.toggle_relapse_button(True)
+    except Exception:
+        pass
+
+    # ---- Status ribbon (ensure something visible) ----
+    try:
+        show_status("DEBUG: overlay render check", False)
+    except Exception:
+        pass
+
+    # ---- Loot overlay: show a shutdown-style box + make it clickable ----
+    try:
+        # Pretend a box is "out" so it looks like a real state
+        loot_box_openable = False
+        box_origin = "debug"
+        box_consumed = False
+
+        # Pick a "shutdown" type so open image becomes shutdown_internet_box_open.png
+        current_lootbox = getattr(MessageKey, "SHUTDOWN_LOOT_BOX", "__debug_shutdown__")
+
+        loot.show_box(Paths.ASSETS_FOLDER + "/shutdown_internet_box.png",
+                      idle_text="(DEBUG) Click to test loot render")
+        loot.set_handlers(on_click=loot_box)
+    except Exception:
+        pass
+
+    # ---- Re-layout everything now that we've forced elements visible ----
+    try:
+        scene.layout()
+    except Exception:
+        pass
+
 # no clue why this works, but it allows the taskbar icon to be custom
 myappid = 'dalichrome.internetmanager.' + SOFTWARE_VERSION_V_LESS # arbitrary string
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
@@ -1038,6 +1118,9 @@ center_canvas.bind("<Configure>", scene.layout)
 background.init(center_canvas)
 watermark.init(center_canvas)
 
+# Bind LAST so nobody overwrites it
+center_canvas.bind("<Configure>", scene.layout)
+
 show_status("Server is not running in Admin", not admin_on)
 
 # Also force one recenter after layout settles (belt + suspenders)
@@ -1046,17 +1129,25 @@ app.after(50, scene.layout)
 bottom.toggle_manual_icon(used_manual_override)
 bottom.toggle_vouched_icon(used_voucher_today)
 
-# Initial Status
-if client_api.do_request(Actions.INTERNET_STATUS, ""):
-    internet_on = True
-    status.show("Internet is On", True)
-    set_icon(True)
-else:
-    internet_on = False
-    status.show("Internet is On", False)
-    set_icon(False)
+# Initial Status (supports DEBUG: start offline UI)
+debug_start_offline = bool(cfg.get("debug_start_offline", False))
 
-bottom.toggle_relapse_button(not internet_on)
+if debug_start_offline:
+    debug_force_offline_ui()
+
+    # Delay slightly so canvas has a size and layout math is stable
+    app.after(100, debug_render_all_overlays)
+else:
+    if client_api.do_request(Actions.INTERNET_STATUS, ""):
+        internet_on = True
+        status.show("Internet is On", True)
+        set_icon(True)
+        bottom.toggle_relapse_button(False)
+    else:
+        internet_on = False
+        status.show("Internet is Off", False)
+        set_icon(False)
+        bottom.toggle_relapse_button(True)
 
 streak = clamp(math.floor((now - last_relapse).total_seconds() / 86400),0,999999)
 
