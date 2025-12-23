@@ -12,6 +12,8 @@ from libuniversal import ConfigKey, MessageKey, StorageKey, TimeKey, Paths
 
 SHUTDOWN_LOOT_BOX_ODDS = 90
 SHUTDOWN_VOUCHER_ODDS = 50
+RETROVOUCHER_ODDS = 15            # % chance that a "reward success" becomes a retrovoucher instead of normal voucher
+SHUTDOWN_RETROVOUCHER_ODDS = 10   # shutdown boxes can be a bit better
 
 LOOT_BOX_ODDS = 80
 VOUCHER_ODDS = 65
@@ -242,34 +244,93 @@ def get_normal_loot_boxes() -> int:
 def get_shutdown_loot_boxes() -> int:
     return json_data.get(StorageKey.SHUTDOWN_LOOT_BOXES, 0)
 
-def open_loot_box() -> int:
+def open_loot_box() -> dict:
+    """
+    Returns: {"voucher": int, "retrovoucher": int}
+    """
     with _storage_lock:
-        voucher_amount = 0
+        rewards = {"voucher": 0, "retrovoucher": 0}
+
         box_amount = get_normal_loot_boxes()
-        if box_amount > 0 and random.randint(0, 99) < VOUCHER_ODDS:
-            voucher_amount += 1
+        if box_amount <= 0:
+            return rewards
+
+        # consume box
         if StorageKey.LOOT_BOXES in json_data:
             json_data[StorageKey.LOOT_BOXES] = max(0, box_amount - 1)
 
-        add_voucher(voucher_amount)
+        # "success" roll (same behavior as before)
+        if random.randint(0, 99) < VOUCHER_ODDS:
+            if retrovoucher_enabled() and random.randint(0, 99) < RETROVOUCHER_ODDS:
+                add_retrovoucher(1)
+                rewards["retrovoucher"] = 1
+            else:
+                add_voucher(1)
+                rewards["voucher"] = 1
+
         save_storage()
+        return rewards
 
-        return voucher_amount
 
-def open_shutdown_loot_box() -> int:
+def open_shutdown_loot_box() -> dict:
+    """
+    Returns: {"voucher": int, "retrovoucher": int}
+    """
     with _storage_lock:
-        voucher_amount = 0
-        streak = get_streak()
+        rewards = {"voucher": 0, "retrovoucher": 0}
+
         box_amount = get_shutdown_loot_boxes()
-        if box_amount > 0 and random.randint(0, 99) < max(SHUTDOWN_VOUCHER_ODDS - streak // 14, 5):
-            voucher_amount += 1
+        if box_amount <= 0:
+            return rewards
+
+        # consume box
         if StorageKey.SHUTDOWN_LOOT_BOXES in json_data:
             json_data[StorageKey.SHUTDOWN_LOOT_BOXES] = max(0, box_amount - 1)
 
-        add_voucher(voucher_amount)
-        save_storage()
+        # old logic: chance improves with streak
+        streak = get_streak()
+        success_odds = max(SHUTDOWN_VOUCHER_ODDS - streak // 14, 5)
 
-        return voucher_amount
+        if random.randint(0, 99) < success_odds:
+            if retrovoucher_enabled() and random.randint(0, 99) < SHUTDOWN_RETROVOUCHER_ODDS:
+                add_retrovoucher(1)
+                rewards["retrovoucher"] = 1
+            else:
+                add_voucher(1)
+                rewards["voucher"] = 1
+
+        save_storage()
+        return rewards
+
+def open_shutdown_loot_box() -> dict:
+    """
+    Returns: {"voucher": int, "retrovoucher": int}
+    """
+    with _storage_lock:
+        rewards = {"voucher": 0, "retrovoucher": 0}
+
+        box_amount = get_shutdown_loot_boxes()
+        if box_amount <= 0:
+            return rewards
+
+        # consume box
+        if StorageKey.SHUTDOWN_LOOT_BOXES in json_data:
+            json_data[StorageKey.SHUTDOWN_LOOT_BOXES] = max(0, box_amount - 1)
+
+        # old logic: chance improves with streak
+        streak = get_streak()
+        success_odds = max(SHUTDOWN_VOUCHER_ODDS - streak // 14, 5)
+
+        if random.randint(0, 99) < success_odds:
+            if retrovoucher_enabled() and random.randint(0, 99) < SHUTDOWN_RETROVOUCHER_ODDS:
+                add_retrovoucher(1)
+                rewards["retrovoucher"] = 1
+            else:
+                add_voucher(1)
+                rewards["voucher"] = 1
+
+        save_storage()
+        return rewards
 
 def get_a_loot_box() -> MessageKey:
     shutdown_amount = get_shutdown_loot_boxes()

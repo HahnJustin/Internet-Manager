@@ -173,13 +173,16 @@ class Message:
             content = {MessageKey.RESULT: lootbox_amount}
         elif action == Actions.LOOT_OPEN:
             lootbox_type = self.request.get("value")
-            voucher_amount = 0
+
+            rewards = {"voucher": 0, "retrovoucher": 0}
             if lootbox_type == MessageKey.SHUTDOWN_LOOT_BOX:
-                voucher_amount = configreader.open_shutdown_loot_box()
+                rewards = configreader.open_shutdown_loot_box()
             elif lootbox_type == MessageKey.NORMAL_LOOT_BOX:
-                voucher_amount = configreader.open_loot_box()
+                rewards = configreader.open_loot_box()
+
             stop_loot_box_timer()
-            content = {MessageKey.RESULT: voucher_amount}
+            content = {MessageKey.RESULT: rewards}
+
         elif action == Actions.NEW_LOOT:
             global loot_box_gained
             with _loot_lock:
