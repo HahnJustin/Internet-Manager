@@ -6,10 +6,8 @@
 #define MyAppPublisher "Dalichrome"
 #define MyAppURL "https://dalichro.me/project/internet-manager/"
 #define MyAppExeName "internet_manager.exe"
-#define MyAppCreateTasks "create_tasks.exe"
-#define MyAppRemoveTasks "remove_tasks.exe"
-#define MyAppKillServer "kill_server.exe"
 #define MyAppServerExeName "internet_manager_server.exe"
+#define MyAppUtilityExe "internet_manager_utility.exe"
 
 [Setup]
 AppId={{830FD9CF-9FF5-429D-A381-6E48510D3202}
@@ -47,10 +45,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; \
 
 [Files]
 Source: "dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "dist\{#MyAppCreateTasks}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\{#MyAppServerExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "dist\{#MyAppRemoveTasks}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "dist\{#MyAppKillServer}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\{#MyAppUtilityExe}"; DestDir: "{app}"; Flags: ignoreversion
 
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "EULA"; DestDir: "{app}"; Flags: ignoreversion
@@ -61,11 +57,19 @@ Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppCreateTasks}"; Flags: runhidden
+; Create/update the scheduled tasks (requires admin; installer already runs admin)
+Filename: "{app}\{#MyAppUtilityExe}"; Parameters: "install-tasks"; Flags: runhidden waituntilterminated
 
 [UninstallRun]
-Filename: "{app}\{#MyAppKillServer}"; Flags: runhidden; RunOnceId: "KillServerTask"
-Filename: "{app}\{#MyAppRemoveTasks}"; Flags: runhidden; RunOnceId: "RemoveTasks"
+; Ask the running server to shut down (best-effort)
+Filename: "{app}\{#MyAppUtilityExe}"; Parameters: "close-server"; Flags: runhidden; RunOnceId: "KillServerTask"
+
+; Remove scheduled tasks
+Filename: "{app}\{#MyAppUtilityExe}"; Parameters: "remove-tasks"; Flags: runhidden; RunOnceId: "RemoveTasks"
+
+
+[Registry]
+Root: HKLM; Subkey: "Software\Dalitech\Internet Manager"; ValueType: string; ValueName: "InstallPath"; ValueData: "{app}"; Flags: uninsdeletekey
 
 [Code]
 
@@ -543,7 +547,7 @@ begin
     // If upgrading, kill existing server
     if IsUpgradeInstall() then
     begin
-      Exec(ExpandConstant('{app}\{#MyAppKillServer}'), '', '', SW_HIDE,
+      Exec(ExpandConstant('{app}\{#MyAppUtilityExe}'), 'kill-server', '', SW_HIDE,
         ewWaitUntilTerminated, ResultCode);
     end;
 

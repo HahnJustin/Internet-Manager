@@ -26,6 +26,7 @@ GUI_THREAD_TIME = 1000
 SAVE_THREAD_TIME = 3
 
 ASSET_FOLDER = "assets"
+SHOULD_EXIT = False
 
 global now
 global time_datas
@@ -370,6 +371,8 @@ sel.register(lsock, selectors.EVENT_READ, data=None)
 
 try:
     while True:
+        if libserver.SHOULD_EXIT:
+            break
         events = sel.select(timeout=1)
         for key, mask in events:
             if key.data is None:

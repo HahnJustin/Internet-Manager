@@ -12,6 +12,8 @@ loot_box_gained = 0
 loot_box_timer = None
 _loot_lock = threading.Lock()
 
+SHOULD_EXIT = False
+
 class Message:
     def __init__(self, selector, sock, addr):
         self.selector = selector
@@ -129,10 +131,10 @@ class Message:
             configreader.reset_relapse_time()
             configreader.set_manual_override(True)
             content = {MessageKey.RESULT: "attempted to turn on internet, relapse acknowledged"}
-        elif action == Actions.KILL_SERVER:
-            self.selector.close()
-            sys.exit()
-            content = {MessageKey.RESULT: "killed server"}
+        elif action == Actions.CLOSE_SERVER:
+            global SHOULD_EXIT
+            SHOULD_EXIT = True
+            content = {MessageKey.RESULT: "closing server"}
         elif action == Actions.LOOT_CHECK:
             lootbox_type = self.request.get("value")
             lootbox_amount = 0

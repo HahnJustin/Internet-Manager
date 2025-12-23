@@ -14,7 +14,7 @@ class Actions(str, Enum):
     UNUSED_VOUCHER = "unused_voucher"
     RELAPSE = "relapse"
     ADD_VOUCHER = "add_voucher"
-    KILL_SERVER = "kill_server"
+    CLOSE_SERVER = "close_server"
     LOOT_CHECK = "loot_check"
     LOOT_OPEN = "loot_open"
     NEW_LOOT = "new_loot"

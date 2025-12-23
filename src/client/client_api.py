@@ -23,7 +23,7 @@ def create_request(action, value):
                     Actions.GRAB_CONFIG, Actions.ADMIN_STATUS,
                     Actions.INTERNET_STATUS, Actions.GRAB_STORAGE,
                     Actions.RELAPSE, Actions.ADD_VOUCHER,
-                    Actions.KILL_SERVER):
+                    Actions.CLOSE_SERVER):
         return dict(
             type="text/json",
             encoding="utf-8",
