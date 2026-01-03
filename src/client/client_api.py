@@ -8,7 +8,7 @@ from libuniversal import Actions
 
 global host, port, app
 
-def create_request(action, value):
+def create_request(action, value = ""):
     global host, port
     if action in (Actions.SEARCH, Actions.USED_VOUCHER, Actions.UNUSED_VOUCHER,
               Actions.LOOT_OPEN, Actions.LOOT_CHECK,

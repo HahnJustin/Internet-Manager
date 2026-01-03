@@ -87,7 +87,7 @@ def help_dialogue():
     social_images = {}
 
     for platform, url in social_medias.items():
-        image_path = resource_path(f"{Paths.ASSETS_FOLDER}/{platform}_link.png")
+        image_path = resource_path(f"{Paths.ASSETS_FOLDER.value}/{platform}_link.png")
         try:
             social_image = get_image(image_path)
         except Exception as e:
@@ -113,13 +113,10 @@ def help_dialogue():
     top.social_images = social_images
 
     # Set the icon twice to ensure it persists
-    icon_path = resource_path(f"{Paths.ASSETS_FOLDER}/info_icon.ico")
-    try:
-        top.wm_iconbitmap(icon_path)
-    except Exception as e:
-        print(f"Error setting icon: {e}")
+    icon_path = resource_path(f"{Paths.ASSETS_FOLDER.value}/info_icon.ico")
+    _set_frame_icon(top, icon_path)
     top.update_idletasks()     # Force any pending updates
-    top.after(201, lambda: top.iconbitmap(icon_path))
+    top.after(201, lambda: _set_frame_icon(top, icon_path))
 
     # Add widgets and focus
     top.focus_set()
@@ -133,3 +130,9 @@ def help_dialogue():
 
 def open_url(url):
     webbrowser.open_new(url)
+
+def _set_frame_icon(top, icon_path):
+    try:
+        top.wm_iconbitmap(icon_path)
+    except Exception as e:
+        print(f"Error setting icon: {e}")

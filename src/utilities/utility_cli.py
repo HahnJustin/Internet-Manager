@@ -7,8 +7,8 @@ import sys
 
 import pyuac
 
-from utilities import tasks
-from utilities.server_control import close_server
+import tasks
+from server_control import close_server
 
 
 SERVER_EXE_DEFAULT = "internet_manager_server.exe"

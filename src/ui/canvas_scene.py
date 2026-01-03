@@ -1,9 +1,10 @@
 from __future__ import annotations
 from dataclasses import dataclass
+import tkinter
 
 @dataclass
 class CanvasScene:
-    canvas: object
+    canvas: tkinter.Canvas
     background: object
     watermark: object
     loot: object
@@ -46,12 +47,16 @@ class CanvasScene:
 
     def enforce_zorder(self):
         c = self.canvas
-        # bottom-most
-        c.tag_lower("bg")
 
-        # watermark just above bg
-        c.tag_raise("watermark", "bg")
+        if(c.find_withtag("watermark")):
+            if(c.find_withtag("bg")):
 
-        # overlays above watermark
-        for tag in ("status", "loot", "bottomui", "relapsebtn"):
-            c.tag_raise(tag, "watermark")
+                # bottom-most
+                c.tag_lower("bg")
+
+                # watermark just above bg
+                c.tag_raise("watermark", "bg")
+
+            # overlays above watermark
+            for tag in ("status", "loot", "bottomui", "relapsebtn"):
+                c.tag_raise(tag, "watermark")

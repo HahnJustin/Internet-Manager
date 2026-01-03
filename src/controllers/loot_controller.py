@@ -6,7 +6,7 @@ from typing import Optional
 
 from domain.rules import clamp
 from client import client_api
-from libuniversal import Paths, Actions, MessageKey
+from libuniversal import Paths, Actions, MessageKey, StorageKey
 from domain.state import AppState
 
 from typing import Optional, Callable
@@ -161,6 +161,21 @@ class LootController:
 
         self.state.vouchers.local = new_local
         return True
+    
+    def _try_add_retrovouchers(self, amount: int) -> bool:
+        if amount <= 0:
+            return False
+
+        max_local = max(0, self.state.vouchers.retrolimit)
+        if self.state.vouchers.retrolocal >= max_local:
+            return False
+
+        new_local = min(max_local, self.state.vouchers.retrolocal + amount)
+        if new_local == self.state.vouchers.local:
+            return False
+
+        self.state.vouchers.local = new_local
+        return True
 
     def _get_loot_result(self):
         def on_opened(result):
@@ -169,16 +184,26 @@ class LootController:
                 self._schedule_hide()
                 return
 
-            voucher_amount = int(result or 0)
-            self.loot_overlay.state = "opened"
+            new_vouchers = dict(result)[StorageKey.VOUCHER.value]
+            new_retrovouchers = dict(result)[StorageKey.VOUCHER.value]
 
-            if voucher_amount <= 0:
+            if new_vouchers <= 0 and new_retrovouchers <= 0:
                 self.loot_overlay.set_text("There was nothing inside :(")
-            else:
-                added = self._try_add_vouchers(voucher_amount)
+            elif new_vouchers > 0:
+                added = self._try_add_vouchers(new_vouchers)
                 self.loot_overlay.set_image(Paths.ASSETS_FOLDER + "/voucher.png")
                 self.loot_overlay.set_text(
                     "You found a voucher!!!" if added else "You found a voucher, but don't have room..."
+                )
+
+                if added and self.on_vouchers_changed:
+                    # schedule on UI thread (same as main loop)
+                    self.app.after(0, self.on_vouchers_changed)
+            else:
+                added = self._try_add_retrovouchers(new_retrovouchers)
+                self.loot_overlay.set_image(Paths.ASSETS_FOLDER + "/retrovoucher.png")
+                self.loot_overlay.set_text(
+                    "You found a retrovoucher!!!" if added else "You found a retrovoucher, but don't have room..."
                 )
 
                 if added and self.on_vouchers_changed:

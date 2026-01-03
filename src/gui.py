@@ -226,7 +226,6 @@ def update_retrovoucher_label():
 
     v = state.vouchers
     count = int(getattr(v, "retrolocal", 0))
-    retrovoucher_btn.configure(text=f"x{count}")
 
     at_limit = (count >= v.retrolimit)
     txt = RETRO_LIMIT_COLOR if at_limit else "#ffffff"
@@ -234,10 +233,11 @@ def update_retrovoucher_label():
     if v.retro_used:
         retrovoucher_btn.configure(
             state="disabled",
-            text_color=txt,                 # harmless, but…
-            text_color_disabled=txt,        # <-- THIS is what disabled uses
+            text_color=txt,               
+            text_color_disabled=txt,       
             fg_color=RETRO_BG_USED,
             hover_color=RETRO_BG_USED,
+            text=f"x{count}",
         )
         return
 
@@ -248,6 +248,7 @@ def update_retrovoucher_label():
             text_color=txt,
             fg_color=RETRO_BG_SCHEDULED,
             hover_color=RETRO_HOVER,
+            text=f"x{count-1}",
         )
     else:
         retrovoucher_btn.configure(
@@ -255,6 +256,7 @@ def update_retrovoucher_label():
             text_color=txt,
             fg_color=RETRO_BG,
             hover_color=app_bg_color,
+            text=f"x{count}",
         )
 
 def on_retrovoucher_clicked():

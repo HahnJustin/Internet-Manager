@@ -324,10 +324,10 @@ def open_shutdown_loot_box() -> dict:
         if random.randint(0, 99) < success_odds:
             if retrovoucher_enabled() and random.randint(0, 99) < SHUTDOWN_RETROVOUCHER_ODDS:
                 add_retrovoucher(1)
-                rewards["retrovoucher"] = 1
+                rewards[StorageKey.RETROVOUCHER.value] = 1
             else:
                 add_voucher(1)
-                rewards["voucher"] = 1
+                rewards[StorageKey.VOUCHER.value] = 1
 
         save_storage()
         return rewards
