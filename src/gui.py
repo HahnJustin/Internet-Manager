@@ -30,7 +30,7 @@ from client.api_service import ApiService
 from ui.action_list_view import ActionListView
 from configreader import str_to_datetime, datetime_to_str
 
-SOFTWARE_VERSION_V_LESS = '1.3.0'
+SOFTWARE_VERSION_V_LESS = '1.3.0-beta'
 SOFTWARE_VERSION = "v" + SOFTWARE_VERSION_V_LESS
 
 COLOR_AMOUNT = 100
