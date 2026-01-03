@@ -2,7 +2,7 @@
 
 #define MyAppName "Internet Manager"
 #define MyAppNameNoSpace "Internet-Manager"
-#define MyAppVersion "1.2.1"
+#define MyAppVersion "1.3.0"
 #define MyAppPublisher "Dalichrome"
 #define MyAppURL "https://dalichro.me/project/internet-manager/"
 #define MyAppExeName "internet_manager.exe"
@@ -117,14 +117,24 @@ begin
     Exit;
 
   StartPos := KeyPos + Length(KeySearch);
+
+  // Skip whitespace after the colon
+  while (StartPos <= Length(JSON)) and (JSON[StartPos] <= ' ') do
+    Inc(StartPos);
+
+  if StartPos > Length(JSON) then
+    Exit;
+
   EndPos := StartPos;
-  while (EndPos <= Length(JSON)) and not (JSON[EndPos] in [',','}',' ']) do
+  // Read until comma/brace/whitespace/newline/tab
+  while (EndPos <= Length(JSON)) and not (JSON[EndPos] in [',', '}', ' ', #9, #10, #13]) do
     Inc(EndPos);
 
-  Value := Trim(Copy(JSON, StartPos, EndPos - StartPos));
-  if Lowercase(Value) = 'true' then
+  Value := Lowercase(Trim(Copy(JSON, StartPos, EndPos - StartPos)));
+
+  if Value = 'true' then
     Result := True
-  else if Lowercase(Value) = 'false' then
+  else if Value = 'false' then
     Result := False;
 end;
 
@@ -295,6 +305,7 @@ var
   EditWarningMinutes: TEdit;
   CheckMilitaryTime: TCheckBox;
   CheckSoundOn: TCheckBox;
+  CheckUseRetroVoucher: TCheckBox;
 
 // Advanced fields
 var
@@ -339,7 +350,8 @@ begin
   EditWarningMinutes.Text := IntToStr(ReadJsonInteger(JSON, 'warning_minutes', 15));
   CheckMilitaryTime.Checked := ReadJsonBoolean(JSON, 'military_time', False);
   CheckSoundOn.Checked := ReadJsonBoolean(JSON, 'sound_on', True);
-
+  CheckUseRetroVoucher.Checked := ReadJsonBoolean(JSON, 'use_retrovoucher', False);
+  
   // ADVANCED FIELDS
   EditHost.Text := ReadJsonString(JSON, 'host', '127.0.0.1');
   EditPort.Text := IntToStr(ReadJsonInteger(JSON, 'port', 65432));
@@ -354,7 +366,7 @@ function GenerateJsonFromWizardFields(): String;
 var
   shutdownTimes, enforcedShutdownTimes, upTimes, ethernet: String;
   warningMinutes: Integer;
-  mt, so: Boolean;
+  mt, so, urv: Boolean;
   host, key, streakShift: String;
   port: Integer;
 begin
@@ -366,6 +378,7 @@ begin
   warningMinutes := StrToIntDef(EditWarningMinutes.Text, 15);
   mt := CheckMilitaryTime.Checked;
   so := CheckSoundOn.Checked;
+  urv := CheckUseRetroVoucher.Checked;
 
   // ADVANCED FIELDS
   host := EditHost.Text;
@@ -385,7 +398,8 @@ begin
     '  "streak_shift": "' + streakShift + '",'#13#10 +
     '  "military_time": ' + Lowercase(BoolToStr(mt)) + ','#13#10 +
     '  "sound_on": ' + Lowercase(BoolToStr(so)) + ','#13#10 +
-    '  "warning_minutes": ' + IntToStr(warningMinutes) + #13#10 +
+    '  "warning_minutes": ' + IntToStr(warningMinutes) + ','#13#10 +  
+    '  "use_retrovoucher": ' + Lowercase(BoolToStr(urv)) + #13#10 +  
     '}';
 end;
 
@@ -437,33 +451,41 @@ begin
   NextTop := CreateLabeledEdit(BasicPage.Surface,
     'Warning Minutes (How many minutes prior to a shutdown you hear a noise):', EditWarningMinutes, 10, NextTop, 100) + 12;
 
+  // ---- Checkbox row (horizontal) ----
   // Military Time
   CheckMilitaryTime := TCheckBox.Create(WizardForm);
   CheckMilitaryTime.Parent := BasicPage.Surface;
   CheckMilitaryTime.Top := NextTop + 4;
   CheckMilitaryTime.Left := 10;
-  CheckMilitaryTime.Width := 200;
-  CheckMilitaryTime.Caption := 'Use Military Time';
+  CheckMilitaryTime.Width := 140;
+  CheckMilitaryTime.Caption := 'Military Time';
   CheckMilitaryTime.Checked := False;
-  NextTop := CheckMilitaryTime.Top + CheckMilitaryTime.Height + 12;
 
   // Sound On
   CheckSoundOn := TCheckBox.Create(WizardForm);
   CheckSoundOn.Parent := BasicPage.Surface;
-  CheckSoundOn.Top := NextTop + 4;
-  CheckSoundOn.Left := 10;
-  CheckSoundOn.Width := 200;
+  CheckSoundOn.Top := CheckMilitaryTime.Top;         // same row
+  CheckSoundOn.Left := CheckMilitaryTime.Left + CheckMilitaryTime.Width + 16;
+  CheckSoundOn.Width := 110;
   CheckSoundOn.Caption := 'Sound On';
   CheckSoundOn.Checked := True;
-  NextTop := CheckSoundOn.Top + CheckSoundOn.Height + 12;
 
+  // Use RetroVoucher
+  CheckUseRetroVoucher := TCheckBox.Create(WizardForm);
+  CheckUseRetroVoucher.Parent := BasicPage.Surface;
+  CheckUseRetroVoucher.Top := CheckMilitaryTime.Top; // same row
+  CheckUseRetroVoucher.Left := CheckSoundOn.Left + CheckSoundOn.Width + 16;
+  CheckUseRetroVoucher.Width := 160;
+  CheckUseRetroVoucher.Caption := 'RetroVoucher';
+  CheckUseRetroVoucher.Checked := False; // default OFF
 
+  // advance layout AFTER the row
+  NextTop := 0;
+  
   // -------------------- Advanced Settings Page --------------------
   AdvancedPage := CreateCustomPage(BasicPage.ID,
     'Advanced Settings',
     'Configure advanced settings like Host, Port, etc. [DO NOT CHANGE THESE UNLESS YOU KNOW WHAT YOURE DOING]');
-
-  NextTop := 0;
 
   // Host
   NextTop := CreateLabeledEdit(AdvancedPage.Surface,

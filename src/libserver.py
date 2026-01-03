@@ -194,8 +194,8 @@ class Message:
             content = {MessageKey.RESULT: key}
         elif action == Actions.USED_RETROVOUCHER:
             storage = configreader.get_storage()
-
-            if not bool(storage.get(RETRO_USED_KEY, False)):
+            count = int(storage.get(RETRO_COUNT_KEY, 0))
+            if count > 0 and not bool(storage.get(RETRO_USED_KEY, False)):
                 storage[RETRO_SCHED_KEY] = True
                 refund_and_clear_all_vouchers(storage)
                 configreader.force_storage(storage)

@@ -30,7 +30,7 @@ from client.api_service import ApiService
 from ui.action_list_view import ActionListView
 from configreader import str_to_datetime, datetime_to_str
 
-SOFTWARE_VERSION_V_LESS = '1.2.1'
+SOFTWARE_VERSION_V_LESS = '1.3.0'
 SOFTWARE_VERSION = "v" + SOFTWARE_VERSION_V_LESS
 
 COLOR_AMOUNT = 100
@@ -225,83 +225,106 @@ def update_retrovoucher_label():
         return
 
     v = state.vouchers
-    count = int(getattr(v, "retrolocal", 0))
+    total = int(getattr(v, "retrolocal", 0))
+    limit = int(getattr(v, "retrolimit", 0))
 
-    at_limit = (count >= v.retrolimit)
+    # When scheduled, 1 retrovoucher is reserved (not available)
+    reserved = 1 if bool(getattr(v, "retro_scheduled", False)) else 0
+    available = max(0, total - reserved)
+
+    at_limit = (total >= limit) if limit > 0 else False
     txt = RETRO_LIMIT_COLOR if at_limit else "#ffffff"
 
+    # If you add a pending flag (recommended below), keep the button stable
+    pending = bool(getattr(v, "retro_pending", False))
+
+    # USED => always disabled
     if v.retro_used:
         retrovoucher_btn.configure(
             state="disabled",
-            text_color=txt,               
-            text_color_disabled=txt,       
+            text=f"x{available}",
+            text_color=txt,
+            text_color_disabled=txt,
             fg_color=RETRO_BG_USED,
             hover_color=RETRO_BG_USED,
-            text=f"x{count}",
         )
         return
 
-    # normal scheduled/unscheduled colors
+    # Scheduled state (still clickable to unschedule, unless pending)
     if v.retro_scheduled:
         retrovoucher_btn.configure(
-            state="normal",
+            state="disabled" if pending else "normal",
+            text=f"x{available}",
             text_color=txt,
+            text_color_disabled=txt,
             fg_color=RETRO_BG_SCHEDULED,
-            hover_color=RETRO_HOVER,
-            text=f"x{count-1}",
+            hover_color=RETRO_BG_SCHEDULED if pending else RETRO_HOVER,
         )
-    else:
-        retrovoucher_btn.configure(
-            state="normal",
-            text_color=txt,
-            fg_color=RETRO_BG,
-            hover_color=app_bg_color,
-            text=f"x{count}",
-        )
-
-def on_retrovoucher_clicked():
-    """
-    Toggle schedule/unschedule (only if not used).
-    """
-    global json_data
-
-    if state.vouchers.retro_used:
         return
 
-    target_schedule = not state.vouchers.retro_scheduled
+    # Not scheduled: disable if none available
+    if available <= 0:
+        retrovoucher_btn.configure(
+            state="disabled",
+            text="x0",
+            text_color=txt,
+            text_color_disabled=txt,
+            fg_color=RETRO_BG_USED,
+            hover_color=RETRO_BG_USED,
+        )
+        return
+
+    # Normal available state
+    retrovoucher_btn.configure(
+        state="disabled" if pending else "normal",
+        text=f"x{available}",
+        text_color=txt,
+        text_color_disabled=txt,
+        fg_color=RETRO_BG,
+        hover_color=RETRO_BG if pending else app_bg_color,
+    )
+
+def on_retrovoucher_clicked():
+    v = state.vouchers
+
+    if v.retro_used:
+        return
+
+    # Debounce: ignore while request in flight
+    if bool(getattr(v, "retro_pending", False)):
+        return
+
+    total = int(getattr(v, "retrolocal", 0))
+
+    # If not scheduled yet, must have at least 1 to schedule
+    if (not v.retro_scheduled) and total <= 0:
+        show_status("No retrovouchers available", False)
+        update_retrovoucher_label()
+        return
+
+    target_schedule = not v.retro_scheduled
     action = Actions.USED_RETROVOUCHER if target_schedule else Actions.UNUSED_RETROVOUCHER
 
-    # prevent double-click races
-    if retrovoucher_btn is not None:
-        retrovoucher_btn.configure(state="disabled")
+    # Mark pending so UI disables retro button without changing other widgets
+    v.retro_pending = True
+
+    # Optimistic UI update (this is what makes the count immediately change)
+    v.retro_scheduled = target_schedule
+    update_retrovoucher_label()
 
     def on_done(result):
-        global json_data
-
-        # re-enable unless server says used (then update_retrovoucher_label disables it)
-        try:
-            if retrovoucher_btn is not None:
-                retrovoucher_btn.configure(state="normal")
-        except Exception:
-            pass
+        # Clear pending either way
+        v.retro_pending = False
 
         if isinstance(result, Exception):
+            # Revert optimistic change
+            v.retro_scheduled = (not target_schedule)
             show_status("Retrovoucher: server error", False)
             update_retrovoucher_label()
             return
-        else:
-            state.vouchers.retro_scheduled = target_schedule
-            sync_storage_and_reset_action_list()
-        update_retrovoucher_label()
 
-        # Optional immediate UI refresh:
-        try:
-            state.now = datetime.now()
-            action_list.refresh(now=state.now, vouchers=state.vouchers, cutoff_time=state.cutoff_time)
-            update_help_colors_from_action(action_list.first_button_action())
-            _refresh_time_until_label()
-        except Exception:
-            pass
+        # Pull authoritative server state, but LIGHT refresh (no rebuild => no flash)
+        sync_storage_and_refresh_ui(rebuild_buttons=False)
 
     client_api.do_request_async(action, "", on_done)
 
@@ -503,6 +526,32 @@ def sync_storage_and_reset_action_list():
         action_list._rebuild_buttons()  # yes it's "internal", but it's exactly what you want here
 
         # 4) re-render now
+        state.now = datetime.now()
+        action_list.refresh(now=state.now, vouchers=state.vouchers, cutoff_time=state.cutoff_time)
+        update_help_colors_from_action(action_list.first_button_action())
+        _refresh_time_until_label()
+
+    client_api.do_request_async(Actions.GRAB_STORAGE, "", _on_storage)
+
+def sync_storage_and_refresh_ui(rebuild_buttons: bool = True):
+    def _on_storage(storage):
+        if isinstance(storage, Exception) or storage is None:
+            show_status("Server sync failed", False)
+            return
+
+        hydrate_voucher_state_from_storage(storage, state)
+        update_voucher_label()
+        update_retrovoucher_label()
+
+        for a in time_controller.actions:
+            if hasattr(a, "vouched"):
+                a.vouched = False
+        apply_vouched_from_storage(time_controller.actions, storage)
+
+        action_list.actions = time_controller.actions
+        if rebuild_buttons:
+            action_list._rebuild_buttons()
+
         state.now = datetime.now()
         action_list.refresh(now=state.now, vouchers=state.vouchers, cutoff_time=state.cutoff_time)
         update_help_colors_from_action(action_list.first_button_action())
@@ -931,20 +980,13 @@ streak_centerer.lift()
 update_streak_graphics()
 
 # Container so we can pad/align voucher + retrovoucher consistently
-voucher_cluster = customtkinter.CTkFrame(bottom_right_frame, fg_color=SECONDARY_COLOR, corner_radius=0)
-voucher_cluster.pack(side='right', anchor='e', padx=(0, 6))  # slight inset from window edge
-
-voucher_label = customtkinter.CTkLabel(
-    voucher_cluster,
-    text=f"x{local_vouchers}",
-    image=get_image(Paths.ASSETS_FOLDER + "/tiny_voucher.png"),
-    compound='left',
-    anchor='e',
-    padx=5,
-    text_color="white"
+voucher_cluster = customtkinter.CTkFrame(
+    bottom_right_frame,
+    fg_color=SECONDARY_COLOR,
+    corner_radius=0
 )
-voucher_label.pack(side='right', anchor='e', pady=(1, 0))  # tiny nudge down
-update_voucher_label()
+# Make the cluster stretch full height of bottom bar
+voucher_cluster.pack(side='right', fill="y", anchor='e', padx=(0, 6))
 
 if use_retrovoucher:
     retro_img = get_image(Paths.ASSETS_FOLDER + "/tiny_retrovoucher.png")
@@ -956,16 +998,30 @@ if use_retrovoucher:
         compound='left',
         anchor='e',
         width=5,
-        height=22,
+        # remove short height; let it stretch
         fg_color=RETRO_BG,
         hover_color=app_bg_color,
         corner_radius=0,
         command=on_retrovoucher_clicked,
         text_color="white",
     )
-    retrovoucher_btn.pack(side='right', anchor='e', padx=(0, 6), pady=(2, 0))
+    # Fill full vertical height
+    retrovoucher_btn.pack(side='right', fill="y", anchor='e', padx=(0, 6))
 
     update_retrovoucher_label()
+
+voucher_label = customtkinter.CTkLabel(
+    voucher_cluster,
+    text=f"x{local_vouchers}",
+    image=get_image(Paths.ASSETS_FOLDER + "/tiny_voucher.png"),
+    compound='left',
+    anchor='e',
+    padx=8,
+    text_color="white",
+)
+# Fill full vertical height
+voucher_label.pack(side='right', fill="y", anchor='e')
+update_voucher_label()
 
 loot_button = customtkinter.CTkButton(bottom_left_frame, text=f"x{local_loot_boxes}", 
                                         image=get_image(Paths.ASSETS_FOLDER + "/tiny_box.png"),
@@ -984,10 +1040,9 @@ loot_ctrl = LootController(
     loot_button=loot_button,
     loot_limit=loot_limit,
     local_loot_boxes=local_loot_boxes,
-    on_vouchers_changed=update_voucher_label,
+    on_vouchers_changed=lambda: (update_voucher_label(), update_retrovoucher_label()),
 )
-loot_button.configure(command=loot_ctrl.pull_box_from_storage)
-
+loot_button.configure(command=loot_ctrl.on_loot_button_clicked)
 
 loot_ctrl.check_new_loot()
 loot_ctrl.refresh_loot_count_async()
