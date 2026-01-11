@@ -5,7 +5,8 @@ from typing import Dict, Tuple, Any
 from PIL import Image, ImageTk, ImageDraw
 from customtkinter import CTkImage
 from domain.models import TimeActionKind
-from libuniversal import Paths, app_base_dir, resource_path
+from libuniversal import Paths
+from assets import resource_path
 
 # Cache keyed by (master_id, full_path)
 _canvas_img_cache: Dict[Tuple[int, str], ImageTk.PhotoImage] = {}

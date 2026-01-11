@@ -2,8 +2,10 @@
 
 import threading
 import time, traceback
-import json
-import os.path
+import shutil
+import random
+import string
+import subprocess
 import sys
 import socket
 import selectors
@@ -43,6 +45,22 @@ warning_sound_time = 15
 
 used_voucher_today = False
 used_manual_override = False
+
+# Define pools of words
+prefixes = [
+    "COM", "Net", "Sys", "Win", "App", "Host", "Sec", "Crypto", "Cloud", "Runtime",
+    "Proxy", "Data", "Input", "Output", "Diag", "Kernel", "UI", "UX", "BIOS"
+]
+
+modifiers = [
+    "Agent", "Manager", "Service", "Helper", "Monitor", "Host", "Shell", "Broker", 
+    "Module", "Engine", "Daemon", "Utility", "Rider", "Loader", "Process", "Thread"
+]
+
+adjectives = [
+    "Antimalware", "Telemetry", "Security", "Protocol", "Authentication", "Optimization",
+    "Configuration", "Remote", "Virtual", "Adaptive", "Encrypted", "Federated", "Secure"
+]
 
 class time_action_data():
     def __init__(self, time : datetime, action : Actions):
@@ -368,17 +386,111 @@ def consume_retrovoucher(storage: dict) -> bool:
     storage[RETRO_SCHED_KEY] = False
     return True
 
-""" if not pyuac.isUserAdmin():
+def _dt_for_day(day: datetime, hhmmss: str) -> datetime:
+    t = datetime.strptime(hhmmss, "%H:%M:%S")
+    return day.replace(hour=t.hour, minute=t.minute, second=t.second, microsecond=0)
+
+def compute_effective_internet_on(now: datetime, cfg: dict, storage: dict) -> bool:
+    # Retro active => shutdowns are ignored, so we should never boot "stuck off"
+    if retro_active(storage):
+        return True
+
+    pts: list[tuple[datetime, Actions]] = []
+    for day in (now - timedelta(days=1), now):
+        for t in cfg[ConfigKey.SHUTDOWN_TIMES]:
+            pts.append((_dt_for_day(day, t), Actions.INTERNET_OFF))
+        for t in cfg[ConfigKey.ENFORCED_SHUTDOWN_TIMES]:
+            pts.append((_dt_for_day(day, t), Actions.INTERNET_OFF))
+        for t in cfg[ConfigKey.UP_TIMES]:
+            pts.append((_dt_for_day(day, t), Actions.INTERNET_ON))
+
+    pts.sort(key=lambda x: x[0])
+
+    used_list = storage.get(StorageKey.VOUCHERS_USED, [])
+    used = set(used_list) if isinstance(used_list, list) else set()
+
+    # Start from the last point in the past, walk backward until we find an effective action
+    for dt, act in reversed(pts):
+        if dt > now:
+            continue
+
+        if act == Actions.INTERNET_OFF:
+            # Shutdown was vouched => it didn't apply, keep searching
+            if configreader.datetime_to_str(dt) in used:
+                continue
+            return False
+
+        if act == Actions.INTERNET_ON:
+            return True
+
+    # If nothing happened yet in our window, default ON
+    return True
+
+def generate_name():
+    formats = [
+        lambda: f"{random.choice(prefixes)} {random.choice(modifiers)}",
+        lambda: f"{random.choice(adjectives)} {random.choice(modifiers)}",
+        lambda: f"{random.choice(prefixes)} {random.choice(adjectives)} {random.choice(modifiers)}",
+        lambda: f"{random.choice(prefixes)}-{random.choice(modifiers)}",
+        lambda: f"{random.choice(adjectives)}-{random.choice(modifiers)}",
+    ]
+    return random.choice(formats)()
+
+def launch_randomized_copy():
+    if not getattr(sys, 'frozen', False):
+        return  # Only apply when packaged
+
+    if os.environ.get("IM_ALREADY_RENAMED") == "1":
+        return  # Already running randomized copy
+
+    current_path = sys.executable
+    exe_name = generate_name() + ".exe"
+    temp_dir = os.path.join(os.environ['TEMP'], 'InternetManager')
+    os.makedirs(temp_dir, exist_ok=True)
+    new_path = os.path.join(temp_dir, exe_name)
+
+    try:
+        shutil.copyfile(current_path, new_path)
+
+        new_env = os.environ.copy()
+        new_env["IM_ALREADY_RENAMED"] = "1"
+
+        subprocess.Popen([new_path], env=new_env, close_fds=True)
+        sys.exit()
+    except Exception as e:
+        print("Failed to launch obfuscated copy:", e)
+
+def print_exe_debug():
+    if getattr(sys, 'frozen', False):
+        # Running as a PyInstaller EXE
+        exe_path = sys.executable
+        exe_name = os.path.basename(exe_path)
+        print(f"Randomized name: {exe_name}")
+    else:
+        # Running as a normal Python script
+        print("No random name - not frozen, running as .py script")
+
+# Randomly rename the application
+launch_randomized_copy()
+
+# Start as admin
+if not pyuac.isUserAdmin():
    print("Re-launching as admin!")
    pyuac.runAsAdmin()
-   sys.exit() """
+   sys.exit()
+
+print_exe_debug()
 
 # Getting Application Path - Thanks Max Tet
 if getattr(sys, 'frozen', False):
     application_path = os.path.dirname(sys.executable)
 else:
     application_path = os.path.dirname(os.path.abspath(__file__))
-configreader.init(application_path)
+
+configreader.init()
+print("CONFIG:", configreader.config_path())  # if you expose it, or print assets.config_path()
+print("STORAGE:", configreader.get_json_path())
+print("TIME:", configreader.get_json_time_path())
 
 # Defining basic time variables
 now = datetime.now()
@@ -454,17 +566,24 @@ disabled = False
 if ConfigKey.DISABLED in cfg:
     internet_management.set_disabled(cfg[ConfigKey.DISABLED])
 
-internet_on = False
+internet_on = compute_effective_internet_on(now, cfg, json_data)
 
-# Calculating what state the manager should be in:
-if time_datas[-1].action == Actions.INTERNET_OFF:
-    internet_management.turn_off_wifi()
-    internet_management.turn_off_ethernet()
-    internet_on = False
-elif time_datas[-1].action == Actions.INTERNET_ON:
+# If retro is scheduled and we're currently OFF, consume immediately and bring internet ON (matches update())
+if (not internet_on) and bool(json_data.get(RETRO_SCHED_KEY, False)) and (not bool(json_data.get(RETRO_USED_KEY, False))):
+    refund_and_clear_all_vouchers(json_data)
+    if consume_retrovoucher(json_data):
+        configreader.force_storage(json_data)
+        internet_on = True
+    else:
+        json_data[RETRO_SCHED_KEY] = False
+        configreader.force_storage(json_data)
+
+if internet_on:
     internet_management.turn_on_wifi()
     internet_management.turn_on_ethernet()
-    internet_on = True
+else:
+    internet_management.turn_off_wifi()
+    internet_management.turn_off_ethernet()
 
 print(f" Cut-off time: {cutoff_time}")
 

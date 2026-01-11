@@ -182,6 +182,49 @@ def show_status(text: str, positive: bool):
 
     status_after_id = app.after(60_000, _hide)
 
+def apply_internet_state_ui(internet_on: bool, banner_text: str | None = None):
+    state.internet_on = internet_on
+
+    # Always keep icon correct
+    set_icon(internet_on)
+
+    # Only show a banner when explicitly requested
+    if banner_text is not None:
+        show_status(banner_text, internet_on)
+
+    bottom.toggle_relapse_button(not internet_on)
+
+    if state.admin_on:
+        toggle_globe_animation(internet_on)
+
+    try:
+        scene.layout()
+    except Exception:
+        pass
+
+def refresh_internet_state_ui(on_turn_on_text: str | None = None, on_turn_off_text: str | None = None):
+    """
+    Ask server for current internet status and force UI to match.
+    Optionally show a banner only on transitions.
+    """
+    before = bool(getattr(state, "internet_on", True))
+
+    def _on_status(result):
+        if isinstance(result, Exception) or result is None:
+            return
+
+        now_on = bool(result)
+
+        # Only show a banner when there’s an actual transition
+        if now_on and (not before) and on_turn_on_text:
+            apply_internet_state_ui(True, banner_text=on_turn_on_text)
+        elif (not now_on) and before and on_turn_off_text:
+            apply_internet_state_ui(False, banner_text=on_turn_off_text)
+        else:
+            apply_internet_state_ui(now_on, banner_text=None)
+
+    client_api.do_request_async(Actions.INTERNET_STATUS, "", _on_status)
+
 def string_now():
     return  datetime.strftime(datetime.now(), '%m/%d/%y %H:%M:%S')
 
@@ -313,18 +356,22 @@ def on_retrovoucher_clicked():
     update_retrovoucher_label()
 
     def on_done(result):
-        # Clear pending either way
         v.retro_pending = False
 
         if isinstance(result, Exception):
-            # Revert optimistic change
             v.retro_scheduled = (not target_schedule)
             show_status("Retrovoucher: server error", False)
             update_retrovoucher_label()
             return
 
-        # Pull authoritative server state, but LIGHT refresh (no rebuild => no flash)
         sync_storage_and_refresh_ui(rebuild_buttons=False)
+
+        # Only poll + show "Retrovoucher used" if we scheduled while we were OFF
+        if target_schedule and (not state.internet_on):
+            refresh_internet_state_ui(on_turn_on_text="Retrovoucher used")
+        else:
+            # still okay to ensure icon/button state matches server, but quietly
+            refresh_internet_state_ui()
 
     client_api.do_request_async(action, "", on_done)
 
@@ -935,12 +982,12 @@ if debug_start_offline:
 else:
     if client_api.do_request(Actions.INTERNET_STATUS, ""):
         state.internet_on = True
-        status.show("Internet is On", True)
+        show_status("Internet is On", True)
         set_icon(True)
         bottom.toggle_relapse_button(False)
     else:
         state.internet_on = False
-        status.show("Internet is Off", False)
+        show_status("Internet is Off", False)
         set_icon(False)
         bottom.toggle_relapse_button(True)
 

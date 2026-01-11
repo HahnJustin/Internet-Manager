@@ -9,6 +9,7 @@ from os import path
 from cryptography.fernet import Fernet, InvalidToken
 from datetime import datetime, timedelta
 from libuniversal import ConfigKey, MessageKey, StorageKey, TimeKey, Paths
+from assets import storage_dir, config_path, app_base_dir
 
 SHUTDOWN_LOOT_BOX_ODDS = 90
 SHUTDOWN_VOUCHER_ODDS = 50
@@ -27,7 +28,6 @@ TIME_FMT = "%m/%d/%y %H:%M:%S"
 cfg = None
 json_data = {}
 json_time_data = {}
-application_path = None
 
 key = Fernet.generate_key()
 
@@ -65,32 +65,30 @@ default_time = {
     TimeKey.LAST_TIME_ACTIVE: now_datetime_to_str()
 }
 
-def set_application_path(path):
-    global application_path
-    application_path = path
-
 def get_config() -> dict:
     global cfg
-    global application_path
     global key
-    
-    cfg_path = os.path.join(application_path, Paths.CONFIG_FILE.value)
+
+    cfg_path = config_path()
+    os.makedirs(os.path.dirname(cfg_path) or ".", exist_ok=True)
 
     if cfg is None:
-        # Reading config
         try:
-            with open(cfg_path, 'r') as f:
+            with open(cfg_path, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
         except FileNotFoundError:
-            # If config file doesn't exist, create it with default settings
-            with open(cfg_path, 'w') as json_file:
+            with open(cfg_path, "w", encoding="utf-8") as json_file:
                 json.dump(default_cfg, json_file, indent=4)
-            raise Exception(f"Config file was not found and has been created at {cfg_path}. Please configure it then re-launch")
+            raise Exception(
+                f"Config file was not found and has been created at {cfg_path}. "
+                f"Please configure it then re-launch"
+            )
         except json.JSONDecodeError as e:
             raise Exception(f"Error decoding JSON from config file: {e}")
 
-    if ConfigKey.KEY in cfg:
-        key = cfg[ConfigKey.KEY].encode('utf-8')  # Ensure key is in bytes for Fernet
+    # cfg is a dict with string keys (ConfigKey.KEY.value)
+    if ConfigKey.KEY.value in cfg:
+        key = cfg[ConfigKey.KEY.value].encode("utf-8")
 
     return cfg
 
@@ -207,10 +205,10 @@ def datetime_to_str(time: datetime) -> str:
     return time.strftime(TIME_FMT)
 
 def get_json_path():
-    return os.path.join(application_path, Paths.JSON_FILE.value)
+    return os.path.join(storage_dir(), Paths.JSON_FILE.value)
 
 def get_json_time_path():
-    return os.path.join(application_path, Paths.JSON_TIME_FILE.value)
+    return os.path.join(storage_dir(), Paths.JSON_TIME_FILE.value)
 
 def try_add_loot_box():
     add_box = random.randint(0, 99) < LOOT_BOX_ODDS
@@ -598,9 +596,52 @@ def reset_retrovoucher_window():
 _storage_lock = threading.RLock()
 _time_lock = threading.RLock()
 
-def init(path):
-    set_application_path(path)
+def _migrate_portable_to_stable_once():
+    """
+    If older versions kept config/storage next to the exe, migrate them into the
+    stable data dir the first time we run this new layout.
+    """
+    stable_cfg = config_path()
+    stable_storage = get_json_path()
+    stable_time = get_json_time_path()
+
+    portable_cfg = os.path.join(app_base_dir(), Paths.CONFIG_FILE.value)
+    portable_storage = os.path.join(app_base_dir(), Paths.JSON_FILE.value)
+    portable_time = os.path.join(app_base_dir(), Paths.JSON_TIME_FILE.value)
+
+    # Migrate only if stable doesn't exist yet
+    if (not os.path.exists(stable_cfg)) and os.path.exists(portable_cfg):
+        os.makedirs(os.path.dirname(stable_cfg) or ".", exist_ok=True)
+        shutil.copy2(portable_cfg, stable_cfg)
+
+    if (not os.path.exists(stable_storage)) and os.path.exists(portable_storage):
+        os.makedirs(os.path.dirname(stable_storage) or ".", exist_ok=True)
+        shutil.copy2(portable_storage, stable_storage)
+
+        # also bring backups if they exist
+        for i in (1, 2):
+            src = portable_storage + f".bak{i}"
+            dst = stable_storage + f".bak{i}"
+            if os.path.exists(src) and (not os.path.exists(dst)):
+                shutil.copy2(src, dst)
+
+    if (not os.path.exists(stable_time)) and os.path.exists(portable_time):
+        os.makedirs(os.path.dirname(stable_time) or ".", exist_ok=True)
+        shutil.copy2(portable_time, stable_time)
+
+        for i in (1, 2):
+            src = portable_time + f".bak{i}"
+            dst = stable_time + f".bak{i}"
+            if os.path.exists(src) and (not os.path.exists(dst)):
+                shutil.copy2(src, dst)
+
+def init():
     global json_data, json_time_data
+
+    # make sure stable dir exists before we read/write anything
+    os.makedirs(storage_dir(), exist_ok=True)
+
+    _migrate_portable_to_stable_once()
 
     get_config()  # loads key from config
 

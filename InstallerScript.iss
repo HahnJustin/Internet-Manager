@@ -2,7 +2,7 @@
 
 #define MyAppName "Internet Manager"
 #define MyAppNameNoSpace "Internet-Manager"
-#define MyAppVersion "1.3.0"
+#define MyAppVersion "1.3.0-beta"
 #define MyAppPublisher "Dalichrome"
 #define MyAppURL "https://dalichro.me/project/internet-manager/"
 #define MyAppExeName "internet_manager.exe"
@@ -57,6 +57,9 @@ Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
+; Ask the running server to shut down (best-effort)
+Filename: "{app}\{#MyAppUtilityExe}"; Parameters: "close-server"; Flags: runhidden;
+
 ; Create/update the scheduled tasks (requires admin; installer already runs admin)
 Filename: "{app}\{#MyAppUtilityExe}"; Parameters: "install-tasks"; Flags: runhidden waituntilterminated
 

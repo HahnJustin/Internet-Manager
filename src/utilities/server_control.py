@@ -9,8 +9,7 @@ import sys
 from typing import Any
 
 import configreader
-from libuniversal import Actions, ConfigKey, app_base_dir
-
+from libuniversal import Actions, ConfigKey
 
 def _read_host_port() -> tuple[str, int]:
     """
@@ -18,8 +17,7 @@ def _read_host_port() -> tuple[str, int]:
     Falls back safely.
     """
     try:
-        base = app_base_dir()  # exe folder if frozen, else libuniversal.py folder
-        configreader.init(base)
+        configreader.init()
         cfg = configreader.get_config() or {}
 
         host = cfg.get(ConfigKey.HOST.value, "127.0.0.1")

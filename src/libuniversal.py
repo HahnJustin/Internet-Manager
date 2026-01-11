@@ -70,23 +70,3 @@ class Paths(str, Enum):
     ASSETS_FOLDER = "assets"
     FONTS_FOLDER = "fonts"
     SFX_FOLDER = "sfx"
-
-def app_base_dir() -> str:
-    # PyInstaller exe: sys.executable is the exe path
-    if getattr(sys, "frozen", False):
-        return os.path.dirname(sys.executable)
-    # Running as .py
-    return os.path.dirname(os.path.abspath(__file__))
-
-def resource_path(relative_path: str) -> str:
-    """
-    Absolute path to bundled/adjacent resources.
-    - PyInstaller one-file: uses _MEIPASS
-    - Else: uses the folder containing the exe/script (NOT the working directory)
-    """
-    if hasattr(sys, "_MEIPASS"):
-        base_path = sys._MEIPASS
-    else:
-        base_path = app_base_dir()
-
-    return os.path.join(base_path, relative_path.lstrip("/\\"))
