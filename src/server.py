@@ -16,6 +16,7 @@ import pyuac
 from playsound import playsound
 from libuniversal import *
 from datetime import datetime, timedelta
+from assets import resource_path
 
 SECONDS_DATA_UPDATE = 60
 
@@ -567,9 +568,11 @@ if ConfigKey.DISABLED in cfg:
     internet_management.set_disabled(cfg[ConfigKey.DISABLED])
 
 internet_on = compute_effective_internet_on(now, cfg, json_data)
+retro_scheduled = bool(json_data.get(RETRO_SCHED_KEY, False))
+retro_used = bool(json_data.get(RETRO_USED_KEY, False))
 
 # If retro is scheduled and we're currently OFF, consume immediately and bring internet ON (matches update())
-if (not internet_on) and bool(json_data.get(RETRO_SCHED_KEY, False)) and (not bool(json_data.get(RETRO_USED_KEY, False))):
+if (not internet_on) and retro_scheduled and (not retro_used):
     refund_and_clear_all_vouchers(json_data)
     if consume_retrovoucher(json_data):
         configreader.force_storage(json_data)
@@ -593,6 +596,7 @@ print(f" Last Active Time: {last_active_time}")
 
 json_data = configreader.get_storage()
 retro_is_active = retro_active(json_data)
+print(f" Retro active: {retro_is_active}")
 
 last_cutoff = cutoff_time - timedelta(days=1)
 if last_active_time <= last_cutoff:
@@ -613,6 +617,10 @@ if (not retro_is_active) and last_active_time <= cutoff_time - timedelta(days=1)
     loot_boxes_found = configreader.get_all_loot_boxes() - pre_box_amount
     if loot_boxes_found > 0: libserver.start_loot_box_timer(loot_boxes_found)
     print(f" Morning Lootboxes: {loot_boxes_found}")
+
+print(f"\n Config Json: {configreader.get_config()}")
+
+print(f"\n Storage Json: {json_data}")
 
 data_thread = StoppableThread(target=lambda: every(0.25, update))
 data_thread.daemon = True

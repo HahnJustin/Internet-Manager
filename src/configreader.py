@@ -269,7 +269,6 @@ def open_loot_box() -> dict:
         save_storage()
         return rewards
 
-
 def open_shutdown_loot_box() -> dict:
     """
     Returns: {"voucher": int, "retrovoucher": int}

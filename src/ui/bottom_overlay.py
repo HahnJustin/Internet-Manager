@@ -5,37 +5,47 @@ from PIL import ImageTk
 
 from assets import Paths
 from ui.images import get_canvas_photo, get_round_rect_photo
+from tkinter import Canvas
 
 @dataclass
 class BottomOverlay:
-    canvas: Optional[object] = None
+    canvas: Optional[Canvas] = None
 
     manual_icon_item: Optional[int] = None
     vouched_icon_item: Optional[int] = None
+    retrovouched_icon_item: Optional[int] = None
     relapse_bg_item: Optional[int] = None
     relapse_text_item: Optional[int] = None
 
     manual_icon_tk: Optional[ImageTk.PhotoImage] = None
     vouched_icon_tk: Optional[ImageTk.PhotoImage] = None
+    retrovouched_icon_tk: Optional[ImageTk.PhotoImage] = None
     relapse_bg_tk: Optional[ImageTk.PhotoImage] = None
 
     manual_visible: bool = False
     vouched_visible: bool = False
+    retrovouched_visible: bool = False
     relapse_visible: bool = False
 
     on_relapse_click: Optional[Callable[[], None]] = None
 
-    def init(self, canvas):
+    def init(self, canvas : Canvas):
         self.canvas = canvas
 
         self.manual_icon_tk = get_canvas_photo(canvas, Paths.ASSETS_FOLDER + "/embarrased_globe.png")
         self.vouched_icon_tk = get_canvas_photo(canvas, Paths.ASSETS_FOLDER + "/voucher_globe.png")
+        self.retrovouched_icon_tk = get_canvas_photo(canvas, Paths.ASSETS_FOLDER + "/retrovoucher_globe.png")
 
         self.manual_icon_item = canvas.create_image(
             0, 0, anchor="se", image=self.manual_icon_tk, state="hidden", tags=("bottomui",)
         )
+
         self.vouched_icon_item = canvas.create_image(
             0, 0, anchor="se", image=self.vouched_icon_tk, state="hidden", tags=("bottomui",)
+        )
+        
+        self.retrovouched_icon_item = canvas.create_image(
+            0, 0, anchor="se", image=self.retrovouched_icon_tk, state="hidden", tags=("bottomui",)
         )
 
         self.relapse_bg_tk = get_round_rect_photo(canvas, 240, 34, 10, (181, 27, 32, 210))
@@ -75,6 +85,11 @@ class BottomOverlay:
         self.vouched_visible = value
         if self.canvas and self.vouched_icon_item is not None:
             self.canvas.itemconfigure(self.vouched_icon_item, state=("normal" if value else "hidden"))
+
+    def toggle_retrovouched_icon(self, value: bool):
+        self.retrovouched_visible = value
+        if self.canvas and self.retrovouched_icon_item is not None:
+            self.canvas.itemconfigure(self.retrovouched_icon_item, state=("normal" if value else "hidden"))
 
     def toggle_relapse_button(self, value: bool):
         self.relapse_visible = value
@@ -137,10 +152,15 @@ class BottomOverlay:
             # fallback: old behavior if button hidden
             icons_bottom_y = y_bottom
 
-        # Keep icons right-aligned to the canvas edge,
-        # but vertically aligned with the relapse button row.
-        if self.manual_icon_item is not None:
-            self.canvas.coords(self.manual_icon_item, x_right, icons_bottom_y)
+        icons_in_order = [
+            (self.manual_icon_item, self.manual_visible),
+            (self.vouched_icon_item, self.vouched_visible),
+            (self.retrovouched_icon_item, self.retrovouched_visible),
+        ]
 
-        if self.vouched_icon_item is not None:
-            self.canvas.coords(self.vouched_icon_item, x_right - icon_w - GAP, icons_bottom_y)
+        x = x_right
+        for item, visible in icons_in_order:
+            if item is None or not visible:
+                continue
+            self.canvas.coords(item, x, icons_bottom_y)
+            x -= (icon_w + GAP)

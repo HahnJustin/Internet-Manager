@@ -6,11 +6,12 @@ from PIL import ImageTk
 from assets import Paths
 from ui.images import get_canvas_photo
 from ui import gui_text
+from tkinter import Canvas
 
 
 @dataclass
 class StatusOverlay:
-    canvas: Optional[object] = None
+    canvas: Optional[Canvas] = None
 
     item: Optional[int] = None
     img_tk: Optional[ImageTk.PhotoImage] = None
@@ -22,7 +23,7 @@ class StatusOverlay:
     current_text: str = ""
     positive: bool = True
 
-    def init(self, canvas):
+    def init(self, canvas: Canvas):
         self.canvas = canvas
 
         # Ribbon image

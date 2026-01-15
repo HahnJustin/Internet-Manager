@@ -30,7 +30,7 @@ from client.api_service import ApiService
 from ui.action_list_view import ActionListView
 from configreader import str_to_datetime, datetime_to_str
 
-SOFTWARE_VERSION_V_LESS = '1.3.0-beta'
+SOFTWARE_VERSION_V_LESS = '1.3.0'
 SOFTWARE_VERSION = "v" + SOFTWARE_VERSION_V_LESS
 
 COLOR_AMOUNT = 100
@@ -185,12 +185,18 @@ def show_status(text: str, positive: bool):
 def apply_internet_state_ui(internet_on: bool, banner_text: str | None = None):
     state.internet_on = internet_on
 
+    print("\n === APPLY INTERNET STATUS === ")
+    print(f" * Internet On: {internet_on}")
+    print(f" * Banner: {banner_text} \n")
+
     # Always keep icon correct
     set_icon(internet_on)
 
     # Only show a banner when explicitly requested
     if banner_text is not None:
         show_status(banner_text, internet_on)
+    elif internet_on: show_status("Internet is on", internet_on)
+    else: show_status("Internet is off", internet_on)
 
     bottom.toggle_relapse_button(not internet_on)
 
@@ -212,16 +218,10 @@ def refresh_internet_state_ui(on_turn_on_text: str | None = None, on_turn_off_te
     def _on_status(result):
         if isinstance(result, Exception) or result is None:
             return
-
+        
         now_on = bool(result)
-
-        # Only show a banner when there’s an actual transition
-        if now_on and (not before) and on_turn_on_text:
-            apply_internet_state_ui(True, banner_text=on_turn_on_text)
-        elif (not now_on) and before and on_turn_off_text:
-            apply_internet_state_ui(False, banner_text=on_turn_off_text)
-        else:
-            apply_internet_state_ui(now_on, banner_text=None)
+        if(before is not now_on):
+            apply_internet_state_ui(now_on, banner_text=on_turn_off_text)
 
     client_api.do_request_async(Actions.INTERNET_STATUS, "", _on_status)
 
@@ -278,7 +278,6 @@ def update_retrovoucher_label():
     at_limit = (total >= limit) if limit > 0 else False
     txt = RETRO_LIMIT_COLOR if at_limit else "#ffffff"
 
-    # If you add a pending flag (recommended below), keep the button stable
     pending = bool(getattr(v, "retro_pending", False))
 
     # USED => always disabled
@@ -333,13 +332,11 @@ def on_retrovoucher_clicked():
     if v.retro_used:
         return
 
-    # Debounce: ignore while request in flight
     if bool(getattr(v, "retro_pending", False)):
         return
 
     total = int(getattr(v, "retrolocal", 0))
 
-    # If not scheduled yet, must have at least 1 to schedule
     if (not v.retro_scheduled) and total <= 0:
         show_status("No retrovouchers available", False)
         update_retrovoucher_label()
@@ -348,11 +345,13 @@ def on_retrovoucher_clicked():
     target_schedule = not v.retro_scheduled
     action = Actions.USED_RETROVOUCHER if target_schedule else Actions.UNUSED_RETROVOUCHER
 
-    # Mark pending so UI disables retro button without changing other widgets
     v.retro_pending = True
 
-    # Optimistic UI update (this is what makes the count immediately change)
-    v.retro_scheduled = target_schedule
+    # optimistic UI
+    if state.internet_on:
+        v.retro_scheduled = target_schedule
+    else:
+        v.retro_used = True
     update_retrovoucher_label()
 
     def on_done(result):
@@ -364,13 +363,13 @@ def on_retrovoucher_clicked():
             update_retrovoucher_label()
             return
 
+        # pull latest voucher flags (retro_scheduled/retro_used/etc)
         sync_storage_and_refresh_ui(rebuild_buttons=False)
 
-        # Only poll + show "Retrovoucher used" if we scheduled while we were OFF
+        # If we scheduled while currently OFF, server may immediately flip OFF->ON and mark used.
         if target_schedule and (not state.internet_on):
-            refresh_internet_state_ui(on_turn_on_text="Retrovoucher used")
+            handle_time_event("retro_consumed", None)
         else:
-            # still okay to ensure icon/button state matches server, but quietly
             refresh_internet_state_ui()
 
     client_api.do_request_async(action, "", on_done)
@@ -488,9 +487,31 @@ def register_font(font_path):
 
 def handle_time_event(evt: str, action: TimeAction | None):
     if evt == "day_rollover":
+        # recompute cutoff boundary for the new day
+        state.cutoff_time = compute_cutoff(state.now, cfg[ConfigKey.STREAK_SHIFT])
+
         bottom.toggle_manual_icon(state.used_manual_override)
         bottom.toggle_vouched_icon(state.vouchers.used_today)
+        bottom.toggle_retrovouched_icon(state.vouchers.retro_used)
         update_streak_graphics()
+
+        # force action list to re-evaluate retro icons with the new cutoff_time
+        action_list.refresh(now=state.now, vouchers=state.vouchers, cutoff_time=state.cutoff_time)
+        update_help_colors_from_action(action_list.first_button_action())
+
+    elif evt == "retro_consumed":
+        # force local truth for visuals immediately
+        state.vouchers.retro_scheduled = False
+        state.vouchers.retro_used = True
+        state.vouchers.retro_pending = False
+
+        apply_internet_state_ui(True, banner_text="Retrovoucher Consumed")
+        update_retrovoucher_label()               # <--- THIS makes it stop being red immediately
+        bottom.toggle_retrovouched_icon(True)
+
+        # still sync storage in background (authoritative count etc.)
+        #sync_storage_and_refresh_ui(rebuild_buttons=False)
+        return
 
     elif evt == "voucher_consumed":
         show_status("Voucher Consumed", True)
@@ -634,6 +655,13 @@ def hydrate_voucher_state_from_storage(storage: dict, state: AppState) -> None:
     # if you have keys for these, use them:
     v.retrolocal = int(storage.get(StorageKey.RETROVOUCHER, 0))
     v.retrolimit = int(storage.get(StorageKey.RETROVOUCHER_LIMIT, 1))
+
+    print("\n ===== VOUCHER STATE HYDRATION =====") 
+    print( vars(v)) 
+    print("")
+
+def is_retro_active(v: VoucherState) -> bool:
+    return bool(getattr(v, "retro_scheduled", False) or getattr(v, "retro_used", False) or getattr(v, "retro_pending", False))
 
 def debug_force_offline_ui():
     """
@@ -979,17 +1007,11 @@ if debug_start_offline:
     state.internet_on = False
     # Delay slightly so canvas has a size and layout math is stable
     app.after(100, debug_render_all_overlays)
-else:
-    if client_api.do_request(Actions.INTERNET_STATUS, ""):
-        state.internet_on = True
-        show_status("Internet is On", True)
-        set_icon(True)
-        bottom.toggle_relapse_button(False)
-    else:
-        state.internet_on = False
-        show_status("Internet is Off", False)
-        set_icon(False)
-        bottom.toggle_relapse_button(True)
+elif state.vouchers.retro_used: 
+    apply_internet_state_ui(True, "Internet Retroactivated")
+    bottom.toggle_retrovouched_icon(True)
+elif state.internet_on:
+    apply_internet_state_ui(state.internet_on)
 
 # Globes or admin cautions
 if state.admin_on:

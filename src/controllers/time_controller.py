@@ -5,12 +5,13 @@ from typing import Callable, Optional
 
 from domain.models import TimeAction, TimeActionKind
 from domain.rules import compute_cutoff, compute_streak
+from domain.state import AppState
 from libuniversal import Actions
 from configreader import str_to_datetime, datetime_to_str
 
 class TimeController:
     def __init__(self, state, api, shift_hhmm: str, on_event: Optional[Callable[[str, Optional[TimeAction]], None]] = None):
-        self.state = state
+        self.state: AppState = state
         self.api = api
         self.shift_hhmm = shift_hhmm
         self.on_event = on_event
@@ -21,7 +22,6 @@ class TimeController:
         self.actions.sort(key=lambda a: a.when)
 
     def tick(self):
-        prev_cutoff = self.state.cutoff_time
         self.state.now = datetime.now()
 
         # rollover
@@ -38,23 +38,27 @@ class TimeController:
         for action in self.actions:
             if action.when > now:
                 continue
-
-            if action.vouched:
-                # voucher consumed at trigger time
+            # internet up
+            if action.kind == TimeActionKind.INTERNET_UP:
+                self.state.internet_on = True
+                if self.on_event:
+                    self.on_event("internet_up_triggered", action)
+            # retroactivate
+            elif self.state.vouchers.retro_scheduled:
+                if self.on_event:
+                    self.on_event("retro_consumed", None)
+            # voucher consumed at trigger time
+            elif action.vouched:
                 self.state.vouchers.used_today = True
                 self.state.vouchers.used_count = max(0, self.state.vouchers.used_count - 1)
                 action.vouched = False
                 if self.on_event:
                     self.on_event("voucher_consumed", action)
-            else:
-                if action.kind in (TimeActionKind.SHUTDOWN, TimeActionKind.ENFORCED_SHUTDOWN):
+            # normal action
+            elif action.kind in (TimeActionKind.SHUTDOWN, TimeActionKind.ENFORCED_SHUTDOWN):
                     self.state.internet_on = False
                     if self.on_event:
                         self.on_event("shutdown_triggered", action)
-                elif action.kind == TimeActionKind.INTERNET_UP:
-                    self.state.internet_on = True
-                    if self.on_event:
-                        self.on_event("internet_up_triggered", action)
 
             # roll to tomorrow (same as your recalculate_time)
             action.when = action.when + timedelta(days=1)

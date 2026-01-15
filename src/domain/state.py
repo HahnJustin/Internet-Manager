@@ -9,10 +9,11 @@ class VoucherState:
     used_today: bool = False
     used_count: int = 0
     limit: int = 0
-    retrolocal= 0,
-    retrolimit= 0,
-    retro_scheduled = False,
-    retro_used = False,
+    retrolocal: int = 0
+    retrolimit: int = 0
+    retro_scheduled: bool = False
+    retro_used: bool = False
+    retro_pending: bool = False
 
 @dataclass
 class LootUIState:

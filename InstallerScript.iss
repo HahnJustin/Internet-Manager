@@ -2,7 +2,7 @@
 
 #define MyAppName "Internet Manager"
 #define MyAppNameNoSpace "Internet-Manager"
-#define MyAppVersion "1.3.0-beta"
+#define MyAppVersion "1.3.0"
 #define MyAppPublisher "Dalichrome"
 #define MyAppURL "https://dalichro.me/project/internet-manager/"
 #define MyAppExeName "internet_manager.exe"
@@ -43,6 +43,9 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; \
   GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
+[Dirs]
+Name: "{commonappdata}\InternetManager"; Permissions: users-modify
+
 [Files]
 Source: "dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\{#MyAppServerExeName}"; DestDir: "{app}"; Flags: ignoreversion
@@ -69,6 +72,8 @@ Filename: "{app}\{#MyAppUtilityExe}"; Parameters: "close-server"; Flags: runhidd
 
 ; Remove scheduled tasks
 Filename: "{app}\{#MyAppUtilityExe}"; Parameters: "remove-tasks"; Flags: runhidden; RunOnceId: "RemoveTasks"
+
+
 
 
 [Registry]
@@ -519,7 +524,7 @@ begin
   // Load existing config when on BasicPage
   if CurPageID = BasicPage.ID then
   begin
-    ExistingJson := LoadExistingConfig(ExpandConstant('{app}\config.json'));
+    ExistingJson := LoadExistingConfig(ExpandConstant('{commonappdata}\InternetManager\config.json'));
     if ExistingJson <> '' then
       FillWizardFieldsFromJson(ExistingJson)
     else
@@ -580,7 +585,7 @@ begin
     NewJson := GenerateJsonFromWizardFields();
 
     // Save to {app}\config.json
-    SaveJson(ExpandConstant('{app}\config.json'), NewJson);
+    SaveJson(ExpandConstant('{commonappdata}\InternetManager\config.json'), NewJson);
   end
   else if CurStep = ssDone then
   begin

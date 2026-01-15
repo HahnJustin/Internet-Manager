@@ -146,7 +146,8 @@ class ActionListView(ctk.CTkFrame):
             self._hovered_btn = None
 
     def _handle_click(self, index: int):
-        if self._retro_active():
+        action = self.actions[index]
+        if self._retro_active() and self._is_pre_cutoff(action):
             return
 
         # Disallow clicks past voucher capacity (sorted index rule)
@@ -248,13 +249,16 @@ class ActionListView(ctk.CTkFrame):
         return bool(getattr(v, "retro_scheduled", False) or getattr(v, "retro_used", False))
 
     def _is_pre_cutoff(self, action: TimeAction) -> bool:
-        """
-        "Before cutoff time" means the action's CLOCK TIME is earlier than the cutoff CLOCK TIME.
-        (So 23:00 is NOT 'before 07:00'. 02:00 IS.)
-        """
         if self._cutoff_time is None:
             return False
         return action.when < self._cutoff_time
+
+    def _shows_retro_icon(self, action: TimeAction) -> bool:
+        return (
+            action.kind != TimeActionKind.INTERNET_UP
+            and self._retro_active()
+            and self._is_pre_cutoff(action)
+        )
 
     def _render(self, btn: ctk.CTkButton, action: TimeAction, index: int):
         now = self._last_now
@@ -268,13 +272,19 @@ class ActionListView(ctk.CTkFrame):
 
         # --- NEW: disable hover past voucher threshold ---
         hover_enabled = True
+
+        # disable hover if retro icon is showing
+        if self._shows_retro_icon(action):
+            hover_enabled = False
+
+        # existing rule: disable hover past voucher threshold
         if self._vouchers is not None:
             total = int(getattr(self._vouchers, "local", 0)) + int(getattr(self._vouchers, "used_count", 0))
             if index >= total:
                 hover_enabled = False
 
-        # If hover disabled, make hover_color identical to fg (no visual change)
         hover_color = hv if hover_enabled else fg
+
 
         sig = (
             action.kind,
